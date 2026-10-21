@@ -121,6 +121,39 @@ def observation_to_dict(observation: PoseObservation) -> dict[str, object]:
     }
 
 
+def frame_analysis_for_main_service(
+    record: dict[str, object], pending_events: list[dict[str, object]]
+) -> dict[str, object]:
+    """Return exactly the existing PC1 ``FrameAnalysis`` HTTP contract.
+
+    The local JSONL record deliberately retains extra diagnostic fields.  PC1
+    validates live traffic strictly, so only its documented fields go over the
+    wire.  JPEG bytes are added by ``HttpFrameAnalysisPublisher``.
+    """
+    event = record["event"]
+    assert isinstance(event, dict)
+    event_fields = (
+        "event_type", "camera_id", "track_id", "confirmed_frame_id",
+        "confirmed_at", "fall_probability",
+    )
+    return {
+        name: record[name]
+        for name in (
+            "message_type", "frame_id", "observed_at", "camera",
+            "source_size", "coordinate_system", "image", "persons",
+            "fall_judgments",
+        )
+    } | {
+        "event": {
+            "current_states": event["current_states"],
+            "new_events": [
+                {name: payload[name] for name in event_fields}
+                for payload in pending_events
+            ],
+        }
+    }
+
+
 def head_label_origin(keypoints_xy, *, frame_width: int, frame_height: int) -> tuple[int, int]:
     """Put the compact track tag just above and right of the nose landmark."""
     nose = keypoints_xy[0]
@@ -418,9 +451,9 @@ def main() -> None:
                 "new_events": [],
             }
             if frame_publisher is not None and time.monotonic() >= next_frame_delivery_attempt:
-                frame_record = dict(record)
-                frame_record["event"] = dict(record["event"])
-                frame_record["event"]["new_events"] = list(pending_frame_events.values())
+                frame_record = frame_analysis_for_main_service(
+                    record, list(pending_frame_events.values())
+                )
                 try:
                     response_status = frame_publisher.publish(frame, frame_record)
                 except CentralDeliveryError as exc:
