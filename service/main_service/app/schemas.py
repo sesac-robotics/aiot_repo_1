@@ -154,6 +154,69 @@ class AlertUpdate(_Strict):
     note: str | None = Field(default=None, max_length=1000)
 
 
+# ---------------------------------------------------------------- 실시간 AI 프레임 분석
+class FrameCamera(_Strict):
+    camera_id: str = Field(min_length=1, max_length=32)
+    location: str | None = Field(default=None, max_length=100)
+
+
+class FrameImage(_Strict):
+    format: Literal["jpeg"]
+    source_size: tuple[int, int]
+    display_size: tuple[int, int]
+    coordinate_system: Literal["original_frame_pixels"]
+
+    @model_validator(mode="after")
+    def _sizes(self):
+        if any(value <= 0 for value in (*self.source_size, *self.display_size)):
+            raise ValueError("이미지 크기는 양수여야 합니다")
+        return self
+
+
+class FrameFallEvent(_Strict):
+    """AI가 frame_analysis 안에 넣는 새 낙상 확정 이벤트."""
+    event_type: Literal["fall_confirmed"]
+    camera_id: str = Field(min_length=1, max_length=32)
+    track_id: int | str
+    confirmed_frame_id: int = Field(ge=0)
+    confirmed_at: datetime
+    fall_probability: float | None = Field(default=None, ge=0, le=1)
+
+    _t = field_validator("confirmed_at")(_aware)
+
+
+class FrameEventInfo(_Strict):
+    current_states: list[dict] = Field(default_factory=list)
+    new_events: list[FrameFallEvent] = Field(default_factory=list)
+
+
+class FrameAnalysis(_Strict):
+    """AI → PC1: JPEG 한 장과 짝이 맞는 분석 메타데이터."""
+    message_type: Literal["frame_analysis"]
+    frame_id: int = Field(ge=0)
+    observed_at: datetime
+    camera: FrameCamera
+    source_size: tuple[int, int]
+    coordinate_system: Literal["original_frame_pixels"]
+    image: FrameImage
+    persons: list[dict] = Field(default_factory=list)
+    fall_judgments: list[dict] = Field(default_factory=list)
+    event: FrameEventInfo = Field(default_factory=FrameEventInfo)
+
+    _t = field_validator("observed_at")(_aware)
+
+    @model_validator(mode="after")
+    def _sizes_match(self):
+        if any(value <= 0 for value in self.source_size):
+            raise ValueError("source_size는 양수여야 합니다")
+        if tuple(self.source_size) != tuple(self.image.source_size):
+            raise ValueError("source_size와 image.source_size가 일치해야 합니다")
+        for event in self.event.new_events:
+            if event.camera_id != self.camera.camera_id:
+                raise ValueError("새 낙상 이벤트의 camera_id가 프레임 camera_id와 다릅니다")
+        return self
+
+
 # ---------------------------------------------------------------- SR-06 추적
 class TrackingObservation(_Strict):
     """추적 좌표. state=T면 x,y,dx,dy 필수, N(대상 없음)이면 좌표 없음."""

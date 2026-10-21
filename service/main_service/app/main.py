@@ -21,7 +21,7 @@ from psycopg.rows import dict_row
 from .config import settings
 from .db import get_conn
 from .events import hub
-from .routers import doors, face, falls, patients, tracking
+from .routers import doors, face, falls, frame_analysis, patients, tracking
 from .services.door_receiver import receiver as door_receiver
 from .services.tracking import PC2TCPReceiver, bridge
 
@@ -86,7 +86,7 @@ async def db_down(_request, exc):
     log.error("DB 연결 실패: %s", exc)
     return JSONResponse(status_code=503, content={"detail": "DB에 연결할 수 없습니다. DB(PostgreSQL)가 켜져 있는지 확인하세요."})
 
-for r in (patients.router, face.router, doors.router, falls.router, tracking.router):
+for r in (patients.router, face.router, doors.router, falls.router, tracking.router, frame_analysis.router):
     app.include_router(r)
 
 

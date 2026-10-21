@@ -171,6 +171,8 @@ if is_fall:                                         # 모델이 낙상이라고 
 | SR-04 | Door MCU | TCP 8103 `1` / `0` | 문 상태 보고 |
 | SR-04 | GUI | `GET /api/v1/doors`, `GET /api/v1/doors/{id}/history` | 문 상태·연결 여부 / Door History |
 | SR-03 | 낙상 모듈 | `POST /api/v1/falls` | 낙상 이벤트 → 알람 생성 |
+| AI 화면 | 낙상 AI | `POST /api/v1/live/frame` | JPEG + 관절·bbox·낙상 상태를 한 요청으로 수신 |
+| AI 화면 | GUI | `GET /api/v1/live/frame/{camera_id}`, `/image` | 카메라별 최신 분석 메타데이터 / JPEG 조회 |
 | SR-03 | GUI | `GET /api/v1/alerts?status=ACTIVE` | 알람 목록 |
 | SR-03 | GUI | `POST /api/v1/alerts/{id}/acknowledge`, `/resolve` | 알람 확인 / 상황 해제 |
 | SR-06 | PC2 | `POST /api/v1/tracking/observations` (또는 TCP 8102) | 추적 좌표 → CCTV MCU |
