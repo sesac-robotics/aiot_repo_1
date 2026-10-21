@@ -23,7 +23,10 @@ from .db import get_conn
 from .events import hub
 from .routers import doors, face, falls, patients, tracking
 from .services.door_receiver import receiver as door_receiver
+from .services.gui_tcp import GuiTCPServer
 from .services.tracking import PC2TCPReceiver, bridge
+
+gui_tcp = GuiTCPServer(settings.gui_tcp_port)
 
 
 UPGRADE_SQL = Path(__file__).resolve().parents[1] / "sql" / "02_server_upgrade.sql"
@@ -66,6 +69,8 @@ async def lifespan(app: FastAPI):
     hub.bind_loop(asyncio.get_running_loop())
     bridge.start()
     await door_receiver.start()
+    if settings.gui_tcp_enabled:
+        await gui_tcp.start()
     receiver = PC2TCPReceiver(bridge, settings.pc2_tcp_port) if settings.pc2_tcp_enabled else None
     if receiver:
         await receiver.start()
@@ -73,6 +78,8 @@ async def lifespan(app: FastAPI):
     if receiver:
         await receiver.stop()
     await door_receiver.stop()
+    if settings.gui_tcp_enabled:
+        await gui_tcp.stop()
     bridge.close()
 
 
@@ -101,7 +108,8 @@ def health():
         db = f"error: {type(exc).__name__}"
     return {"server": "ok", "db": db, "auth_enabled": settings.auth_enabled,
             "door_tcp_port": settings.door_tcp_port, "doors_online": sorted(door_receiver.connected),
-            "tracking_mcu": bridge.mode, "pc2_tcp": settings.pc2_tcp_port if settings.pc2_tcp_enabled else "off"}
+            "tracking_mcu": bridge.mode, "pc2_tcp": settings.pc2_tcp_port if settings.pc2_tcp_enabled else "off",
+            "gui_tcp": {"port": settings.gui_tcp_port, "clients": len(gui_tcp.clients), "last_commands": gui_tcp.received[-5:]} if settings.gui_tcp_enabled else "off"}
 
 
 @app.websocket("/ws")

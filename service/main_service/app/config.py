@@ -55,6 +55,10 @@ class Settings:
     track_serial_baud: int = int(os.getenv("TRACK_SERIAL_BAUD", "115200"))
     track_camera_id: str = os.getenv("TRACK_CAMERA_ID", "CAM01")
 
+    # GUI 모니터링 화면용 TCP 텍스트 (FALL / DOOR_IS_OPEN / RFID_IN:...). GUI 원래 형식 그대로
+    gui_tcp_enabled: bool = _bool("GUI_TCP_ENABLED", True)
+    gui_tcp_port: int = int(os.getenv("GUI_TCP_PORT", "8080"))
+
     # PC2 → PC1 추적값 TCP 수신 (한 줄 텍스트: "T,T,x,y,dx,dy" / "N,N")
     pc2_tcp_enabled: bool = _bool("PC2_TCP_ENABLED", True)
     pc2_tcp_port: int = int(os.getenv("PC2_TCP_PORT", "8102"))

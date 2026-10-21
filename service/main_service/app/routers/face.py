@@ -83,6 +83,8 @@ def identify(body: FaceIdentify):
         "event_id": body.event_id, "accepted": True, "processed": True,   # 얼굴팀 전송 대기열이 accepted로 삭제 판단
         "result": result, "duplicate": duplicate,
         "person_id": best["person_id"] if matched else None,
+        "p_num": (int(best["person_id"]) if best["person_id"].isdigit() else best["person_id"]) if matched else None,
+        "role": best["person_type"].title() if matched else "Unknown",   # Patient / Visitor / Staff
         "name": best["name"] if matched else None,
         "similarity": round(best["similarity"], 4) if best else None,
         "can_open": bool(matched and best["can_open"]),

@@ -13,7 +13,7 @@ import os
 import csv
 from datetime import datetime
 import subprocess
-import psycopg2
+import server_api   # 예전 psycopg2 직접 접속 → 중앙 서버 API
 
 
 from_class = uic.loadUiType("patient_monitoring.ui")[0]
@@ -114,38 +114,35 @@ class WindowClass(QMainWindow, from_class) :
         self.alarmlogList.horizontalHeader().setStretchLastSection(True)
         self.alarmlogList.setColumnWidth(0, 130)
 
-    # ◀ 추가할 메서드 1: 데이터베이스 연결
+    # ◀ 추가할 메서드 1: 서버 연결 확인 (DB는 서버만 다룬다)
     def init_database(self):
+        self.server_error_shown = False
         try:
-            self.db_conn = psycopg2.connect(
-                host="localhost",
-                database="hospital_db",        
-                user="postgres",               
-                password="1212",     
-                port="5432"
-            )
-            self.cursor = self.db_conn.cursor()
-            print("[DB 연결 성공] 모니터링 프로그램이 PostgreSQL에 연동되었습니다.")
-        except Exception as e:
-            print(f"[DB 연결 실패] 모니터링 데이터베이스 오류: {e}")
-            self.db_conn = None
+            server_api.list_patients()
+            print(f"[서버 연결 성공] {server_api.API}")
+        except server_api.ServerError as e:
+            print(f"[서버 연결 실패] {e}")
 
     # ◀ 추가할 메서드 2: DB에서 ID, Name 읽어와 enrollList(QListView)에 뿌리기
     def load_enroll_list_from_db(self):
-        if not self.db_conn: return
         try:
             # 1. 새로고침 직전 현재 마우스로 선택된 행 번호 기억하기
             selected_indexes = self.enrollList.selectedIndexes()
             saved_row = selected_indexes[0].row() if selected_indexes else -1
 
-            self.cursor.execute("SELECT p_num, name FROM patients ORDER BY p_num ASC;")
-            rows = self.cursor.fetchall()
+            # 0.5초마다 불리므로 짧게 기다림. 서버가 꺼져 있으면 목록은 그대로 두고 넘어간다
+            try:
+                rows = server_api.list_patients(timeout=0.3)
+                self.server_error_shown = False
+                items = [f"ID: {row[0]} | Name: {row[1]}" for row in rows]
+            except server_api.ServerError as e:
+                if not self.server_error_shown:
+                    print(f"[서버 연결 실패] {e}")
+                    self.server_error_shown = True
+                items = self.list_model.stringList()
             
-            items = []
-            for row in rows:
-                items.append(f"ID: {row[0]} | Name: {row[1]}")
-            
-            self.list_model.setStringList(items)
+            if items != self.list_model.stringList():   # 바뀌었을 때만 갱신 (선택 유지)
+                self.list_model.setStringList(items)
 
             # 2. 리스트가 갱신된 직후 기억해 둔 행 번호로 다시 강제 선택 세팅
             if saved_row != -1 and saved_row < self.list_model.rowCount():
@@ -222,7 +219,6 @@ class WindowClass(QMainWindow, from_class) :
 
     # ◀ 추가할 메서드 3: 선택된 환자 DB에서 삭제하고 리스트 새로고침
     def delete_patient(self):
-        if not self.db_conn: return
         
         selected_indexes = self.enrollList.selectedIndexes()
         if not selected_indexes:
@@ -234,7 +230,7 @@ class WindowClass(QMainWindow, from_class) :
         try:
             # "ID: 2 | Name: pikachu" 형태에서 숫자 ID와 이름 추출
             p_num_str = selected_text.split("ID:")[1].split("|")[0].strip()
-            p_num = int(p_num_str)
+            p_num = p_num_str   # 얼굴팀이 먼저 등록한 'patient_001' 같은 번호도 지울 수 있게 문자열 그대로
             name_str = selected_text.split("Name:")[1].strip()
             
             reply = QMessageBox.question(self, "환자 기록 삭제", 
@@ -242,15 +238,13 @@ class WindowClass(QMainWindow, from_class) :
                                          QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             
             if reply == QMessageBox.StandardButton.Yes:
-                self.cursor.execute("DELETE FROM patients WHERE p_num = %s;", (p_num,))
-                self.db_conn.commit()
+                server_api.delete_patient(p_num)   # 얼굴 등록·카드 연결도 같이 해제됨
                 
                 self.add_log_row(datetime.now().strftime("%Y-%m-%d %H:%M:%S"), f"❌ Deleted Patient NO.{p_num}")
                 self.load_enroll_list_from_db()  # 삭제 후 리스트 새로고침
                 QMessageBox.information(self, "삭제 완료", "환자 데이터가 안전하게 삭제되었습니다.")
                 
         except Exception as e:
-            self.db_conn.rollback()
             print(f"[환자 삭제 실패] {e}")
             QMessageBox.critical(self, "오류", f"데이터 삭제 중 오류가 발생했습니다: {e}")
 
@@ -349,8 +343,8 @@ class WindowClass(QMainWindow, from_class) :
 
     def connect_to_server(self):
         if self.socket.state() == QAbstractSocket.SocketState.UnconnectedState:
-            server_ip = "127.0.0.1" 
-            server_port = 8080
+            server_ip = server_api.SERVER        # 기본 127.0.0.1, HCC_SERVER로 변경
+            server_port = server_api.GUI_TCP_PORT  # 8080 (서버가 FALL / DOOR_IS_OPEN / RFID_IN:... 을 보냄)
             self.serverButton.setText("Connecting...")
             self.serverButton.setEnabled(False)
             self.socket.connectToHost(QHostAddress(server_ip), server_port)

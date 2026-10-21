@@ -1,7 +1,7 @@
 """가짜 PC2 / 낙상 모듈. 실물 AI 없이 서버 API를 시험할 때 쓴다. (표준 라이브러리만 사용)
 
-    python tools/fake_pc2.py register P0001          # P0001의 얼굴 특징벡터 등록
-    python tools/fake_pc2.py identify P0001          # P0001과 비슷한 얼굴 → MATCHED
+    python tools/fake_pc2.py register 2          # 2번(GUI에서 등록한 번호)의 얼굴 특징벡터 등록
+    python tools/fake_pc2.py identify 2          # 2번과 비슷한 얼굴 → MATCHED
     python tools/fake_pc2.py identify stranger       # 처음 보는 얼굴 → UNKNOWN
     python tools/fake_pc2.py track                   # 추적 좌표 5개 전송
     python tools/fake_pc2.py fall                    # 낙상 이벤트 1건
@@ -48,7 +48,7 @@ def post(path: str, body: dict) -> None:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("cmd", choices=["register", "identify", "track", "fall"])
-    ap.add_argument("who", nargs="?", default="P0001")
+    ap.add_argument("who", nargs="?", default="2")
     ap.add_argument("--server", default="http://127.0.0.1:8101")
     ap.add_argument("--token", default="")
     ARGS = ap.parse_args()

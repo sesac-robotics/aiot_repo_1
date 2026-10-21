@@ -19,15 +19,15 @@ API = f"http://{SERVER}/api/v1"
 
 
 def demo_rest() -> None:
-    # 환자 등록 (SR-02) — 서버가 환자 코드(P0001...)를 발급
-    r = requests.post(f"{API}/patients", json={"name": "홍길동", "gender": "M", "birth_date": "1950-01-01",
-                                               "room_number": "101", "blood_type": "A+"})
-    print("등록:", r.status_code, r.json().get("person_id") if r.ok else r.json())
+    # 환자 등록 (SR-02) — GUI patients 표와 같은 필드. 같은 p_num이면 덮어씀
+    r = requests.put(f"{API}/patients/7", json={"name": "홍길동", "gender": "M", "age": 76, "blood_type": "Rh+ A",
+                                                "height": 170, "weight": 65, "disease": "고혈압", "meds": "아스피린"})
+    print("등록:", r.status_code, r.json().get("p_num") if r.ok else r.json())
 
     # 환자 목록 (SR-01 간단 정보: 이름·나이·성별)
     for p in requests.get(f"{API}/patients").json()["items"]:
         age = f"{p['age']}세" if p["age"] is not None else "나이 미입력"
-        print(f"  {p['person_id']} {p['name']} {age} {p['gender'] or '-'}  얼굴등록={p['face_registered']}")
+        print(f"  {p['p_num']} {p['role']} {p['name']} {age} {p['gender'] or '-'}  얼굴등록={p['face_registered']}")
 
     # 문 상태 (SR-01/04)
     for d in requests.get(f"{API}/doors").json()["items"]:
@@ -53,7 +53,7 @@ async def listen() -> None:
             elif t == "alert_update":
                 print("알람 상태 변경:", d["alert_id"], d["status"])
             elif t == "face_result":
-                print("얼굴 식별:", d["result"], d.get("person_id"), d.get("name"))
+                print("얼굴 식별:", d["result"], d.get("p_num"), d.get("role"), d.get("name"))
             else:
                 print(t, d)
 

@@ -36,6 +36,7 @@ services:
       - "8101:8101"   # REST API · WebSocket · /docs  ← 팀원이 접속하는 곳
       - "8102:8102"   # PC2 추적값 TCP (PC2_TCP_ENABLED=true일 때)
       - "8103:8103"   # Door MCU 문 상태 1/0 TCP
+      - "8080:8080"   # GUI 모니터링 화면 텍스트 (FALL, DOOR_IS_OPEN, RFID_IN:...)
     depends_on:
       postgres: {condition: service_healthy}
     restart: unless-stopped

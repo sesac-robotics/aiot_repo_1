@@ -15,7 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.db import get_conn
-from app.main import app
+from app.main import app, gui_tcp
 from app.services.door_receiver import receiver as door_receiver
 from tools.fake_pc2 import fake_vector
 
@@ -30,11 +30,11 @@ def client():
         conn.execute("""TRUNCATE hcc.access_events, hcc.door_commands, hcc.identification_events, hcc.alerts,
                         hcc.fall_events, hcc.face_templates, hcc.rfid_cards, hcc.patient_profiles,
                         hcc.persons CASCADE""")
-        conn.execute("ALTER SEQUENCE hcc.patient_seq RESTART")
         conn.execute("TRUNCATE hcc.door_state_log")
         conn.execute("DELETE FROM hcc.doors WHERE door_id <> 'door_01'")
         conn.execute("UPDATE hcc.doors SET reported_state='UNKNOWN', state_source='UNKNOWN'")
     door_receiver.port = 0                       # 빈 포트 아무거나
+    gui_tcp.port = 0
     with TestClient(app) as c:
         yield c
 
@@ -44,41 +44,54 @@ def test_health(client):
     assert r["server"] == "ok" and r["db"] == "ok"
 
 
-# ------------------------------------------------------------ SR-02
+# ------------------------------------------------------------ SR-02 (GUI 형식)
+GUI_PATIENT = {"p_num": 2, "name": "pikachu", "gender": "M", "age": 26, "blood_type": "Rh+ A",
+               "height": 30.0, "weight": 20.0, "disease": "none", "meds": "none"}
+
+
 def test_patient_crud(client):
-    r = client.post("/api/v1/patients", json={"name": " 김환자 ", "gender": "F", "birth_date": "1950-03-01",
-                                              "blood_type": "AB+", "room_number": "101", "can_open": True})
-    assert r.status_code == 201, r.text
+    r = client.post("/api/v1/patients", json=GUI_PATIENT)
+    assert r.status_code == 200, r.text
     p = r.json()
-    assert p["person_id"] == "P0001" and p["name"] == "김환자" and p["age"] >= 75 and p["face_registered"] is False
+    assert p["created"] is True and p["p_num"] == 2 and p["role"] == "Patient" and p["age"] == 26
+    assert p["blood_type"] == "Rh+ A" and p["height"] == 30.0 and p["face_registered"] is False
 
-    assert client.post("/api/v1/patients", json={"name": "이환자"}).json()["person_id"] == "P0002"
-    assert len(client.get("/api/v1/patients").json()["items"]) == 2
+    # GUI처럼 빈 칸(0.0)은 저장 안 함, 같은 번호로 다시 보내면 덮어쓰기
+    r = client.put("/api/v1/patients/2", json={**GUI_PATIENT, "p_num": None, "weight": 0.0, "meds": "아스피린"})
+    assert r.json()["created"] is False and r.json()["weight"] is None and r.json()["meds"] == "아스피린"
 
-    r = client.patch("/api/v1/patients/P0001", json={"weight_kg": 52.5, "medications": "아스피린"})
-    assert r.status_code == 200 and r.json()["weight_kg"] == 52.5 and r.json()["name"] == "김환자"
+    assert client.post("/api/v1/patients", json={**GUI_PATIENT, "p_num": 3500, "name": "visitor"}).json()["role"] == "Visitor"
+    assert client.post("/api/v1/patients", json={**GUI_PATIENT, "p_num": 4500, "name": "staff"}).json()["role"] == "Staff"
+    items = client.get("/api/v1/patients").json()["items"]
+    assert [i["p_num"] for i in items] == [2, 3500, 4500]
 
-    assert client.post("/api/v1/patients", json={"name": "   "}).status_code == 422
-    assert client.post("/api/v1/patients", json={"name": "a", "birth_date": "2999-01-01"}).status_code == 422
-    assert client.post("/api/v1/patients", json={"name": "a", "unknown_field": 1}).status_code == 422
-    assert client.get("/api/v1/patients/P9999").status_code == 404
+    assert client.post("/api/v1/patients", json={**GUI_PATIENT, "name": "   "}).status_code == 422
+    assert client.post("/api/v1/patients", json={**GUI_PATIENT, "p_num": 0}).status_code == 422
+    assert client.post("/api/v1/patients", json={**GUI_PATIENT, "p_num": 9999}).status_code == 422
+    assert client.post("/api/v1/patients", json={**GUI_PATIENT, "unknown_field": 1}).status_code == 422
+    assert client.put("/api/v1/patients/5", json=GUI_PATIENT).status_code == 422      # 주소와 본문 번호 다름
+    assert client.get("/api/v1/patients/9999").status_code == 404
+
+    # 삭제했던 번호도 다시 등록하면 살아난다
+    assert client.delete("/api/v1/patients/4500").json()["deleted"] is True
+    assert client.post("/api/v1/patients", json={**GUI_PATIENT, "p_num": 4500, "name": "staff"}).json()["created"] is True
 
 
 def test_card_assign(client):
-    assert client.put("/api/v1/patients/P0001/card", json={"card_uid": "04a1b2c3"}).json()["card_uid"] == "04A1B2C3"
-    assert client.get("/api/v1/patients/P0001").json()["card_uid"] == "04A1B2C3"
-    assert client.put("/api/v1/patients/P0002/card", json={"card_uid": "04A1B2C3"}).status_code == 409
-    assert client.put("/api/v1/patients/P0001/card", json={"card_uid": "zz!!"}).status_code == 422
+    assert client.put("/api/v1/patients/2/card", json={"card_uid": "04a1b2c3"}).json()["card_uid"] == "04A1B2C3"
+    assert client.get("/api/v1/patients/2").json()["card_uid"] == "04A1B2C3"
+    assert client.put("/api/v1/patients/3500/card", json={"card_uid": "04A1B2C3"}).status_code == 409
+    assert client.put("/api/v1/patients/2/card", json={"card_uid": "zz!!"}).status_code == 422
 
 
 def test_face_register(client):
-    r = client.post("/api/v1/face/templates", json={"patient_id": "P0001", "embedding": fake_vector("P0001")})
+    r = client.post("/api/v1/face/templates", json={"patient_id": "2", "embedding": fake_vector("2")})
     assert r.status_code == 200, r.text
     assert client.post("/api/v1/face/templates",
-                       json={"patient_id": "P0002", "embedding": fake_vector("P0002")}).status_code == 200
-    assert client.get("/api/v1/patients/P0001").json()["face_registered"] is True
+                       json={"patient_id": "3500", "embedding": fake_vector("3500")}).status_code == 200
+    assert client.get("/api/v1/patients/2").json()["face_registered"] is True
     assert client.post("/api/v1/face/templates",
-                       json={"patient_id": "P0001", "embedding": [0.1] * 100}).status_code == 422
+                       json={"patient_id": "2", "embedding": [0.1] * 100}).status_code == 422
 
 
 def test_face_register_face_team_format(client):
@@ -112,17 +125,17 @@ def _identify(client, who, **kw):
 
 
 def test_face_identify(client):
-    r = _identify(client, "P0001").json()
-    assert r["result"] == "MATCHED" and r["person_id"] == "P0001" and r["similarity"] > 0.8 and r["can_open"]
+    r = _identify(client, "2").json()
+    assert r["result"] == "MATCHED" and r["p_num"] == 2 and r["role"] == "Patient" and r["similarity"] > 0.8
     assert "door_opened" not in r                # 문 개폐는 Door MCU가 판단
-    r = _identify(client, "P0002").json()
-    assert r["result"] == "MATCHED" and r["person_id"] == "P0002" and r["can_open"] is False
+    r = _identify(client, "3500").json()
+    assert r["result"] == "MATCHED" and r["p_num"] == 3500 and r["role"] == "Visitor"
     r = _identify(client, "stranger").json()
-    assert r["result"] == "UNKNOWN" and r["person_id"] is None
+    assert r["result"] == "UNKNOWN" and r["p_num"] is None and r["role"] == "Unknown"
 
     eid = uuid.uuid4().hex[:16]
-    assert _identify(client, "P0001", event_id=eid).json()["duplicate"] is False
-    assert _identify(client, "P0001", event_id=eid).json()["duplicate"] is True
+    assert _identify(client, "2", event_id=eid).json()["duplicate"] is False
+    assert _identify(client, "2", event_id=eid).json()["duplicate"] is True
 
     r = client.post("/api/v1/face/identify", json={"event_id": "x1", "timestamp": now(), "status": "NoFace"})
     assert r.json()["result"] == "NOFACE"
@@ -202,10 +215,33 @@ def test_tracking(client):
     assert bad.status_code == 422
 
 
+# ------------------------------------------------------------ GUI 모니터링 TCP 8080
+def test_gui_tcp_text(client):
+    port = gui_tcp._server.sockets[0].getsockname()[1]
+    with socket.create_connection(("127.0.0.1", port), timeout=3) as g:
+        f = g.makefile("r", encoding="utf-8")
+        assert _wait(lambda: len(gui_tcp.clients) == 1)
+        with _door_socket() as d:
+            d.sendall(b"0\n")                               # 앞 시험이 문을 OPEN으로 두고 끝남
+            assert f.readline().strip() == "DOOR_IS_CLOSE"
+            d.sendall(b"1\n")
+            assert f.readline().strip() == "DOOR_IS_OPEN"
+        _identify(client, "2")
+        assert f.readline().strip() == "RFID_IN:Patient:2:pikachu"
+        _identify(client, "stranger")                        # 모르는 얼굴은 보내지 않음
+        r = client.post("/api/v1/falls", json={"event_id": uuid.uuid4().hex, "camera_id": "CAM01", "occurred_at": now()})
+        assert f.readline().strip() == "FALL"
+        client.post(f"/api/v1/alerts/{r.json()['alert_id']}/resolve", json={})
+        assert f.readline().strip() == "NORMAL"
+        g.sendall(b"DOOR_OPEN\n")                           # GUI 버튼 → 기록만
+        assert _wait(lambda: gui_tcp.received[-1:] == ["DOOR_OPEN"])
+    assert client.get("/health").json()["gui_tcp"]["last_commands"][-1] == "DOOR_OPEN"
+
+
 # ------------------------------------------------------------ SR-02 삭제 → SR-05 반영
 def test_deactivate_removes_face(client):
-    assert client.delete("/api/v1/patients/P0001").json()["face_deleted"] is True
-    assert _identify(client, "P0001").json()["person_id"] != "P0001"
-    assert client.delete("/api/v1/patients/P0001").status_code == 404
+    assert client.delete("/api/v1/patients/2").json()["face_deleted"] is True
+    assert _identify(client, "2").json()["p_num"] != 2
+    assert client.delete("/api/v1/patients/2").status_code == 404
     with get_conn() as conn:
-        assert conn.execute("SELECT count(*) AS n FROM hcc.face_templates WHERE person_id='P0001'").fetchone()["n"] == 0
+        assert conn.execute("SELECT count(*) AS n FROM hcc.face_templates WHERE person_id='2'").fetchone()["n"] == 0

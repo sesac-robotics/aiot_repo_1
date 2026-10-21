@@ -6,5 +6,5 @@ COPY app ./app
 COPY tools ./tools
 COPY tests ./tests
 COPY sql ./sql
-EXPOSE 8101 8102 8103
+EXPOSE 8101 8102 8103 8080
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8101"]

@@ -5,7 +5,7 @@ SR별로 구역을 나눠 두었다. 필드를 추가할 때는 이 파일과 sq
 from __future__ import annotations
 
 import math
-from datetime import date, datetime
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -30,45 +30,41 @@ def _aware(v: datetime) -> datetime:
 
 
 # ---------------------------------------------------------------- SR-02 환자
-class PatientCreate(_Strict):
-    name: str = Field(min_length=1, max_length=100)
-    gender: Literal["M", "F"] | None = None
-    birth_date: date | None = None
-    height_cm: float | None = Field(default=None, gt=0, le=300)
-    weight_kg: float | None = Field(default=None, gt=0, le=500)
-    blood_type: str | None = Field(default=None, max_length=10)   # 예: A+, AB-
-    medical_history: str | None = None
-    medications: str | None = None
-    room_number: str | None = Field(default=None, max_length=20)
-    can_open: bool = False                                        # 출입 허용 여부
+# GUI(ui/hcc_gui)의 patients 표와 같은 필드 이름을 쓴다.
+#   p_num  번호 = RFID 카드·얼굴 등록 ID와 같은 값. 번호 범위로 역할이 정해진다.
+#          1~3000 환자(Patient) · 3001~4000 방문자(Visitor) · 4001~5000 직원(Staff)
+P_NUM_MAX = 5000
 
-    _f = field_validator("height_cm", "weight_kg")(_finite)
+
+def role_of(p_num: int) -> str:
+    if 1 <= p_num <= 3000:
+        return "Patient"
+    if 3001 <= p_num <= 4000:
+        return "Visitor"
+    if 4001 <= p_num <= P_NUM_MAX:
+        return "Staff"
+    return "Unknown"
+
+
+class PatientIn(_Strict):
+    """GUI 등록 화면 → 서버. 같은 p_num으로 다시 보내면 덮어쓴다(GUI의 ON CONFLICT와 같음)."""
+    p_num: int | None = Field(default=None, ge=1, le=P_NUM_MAX)   # PUT /patients/{p_num}이면 생략 가능
+    name: str = Field(min_length=1, max_length=50)
+    gender: Literal["M", "F"] | None = None
+    age: int | None = Field(default=None, ge=0, le=150)
+    blood_type: str | None = Field(default=None, max_length=10)   # 예: "Rh+ A", "Rh- AB"
+    height: float | None = Field(default=None, ge=0, le=300)      # cm. 0은 "입력 안 함"으로 처리
+    weight: float | None = Field(default=None, ge=0, le=500)      # kg. 0은 "입력 안 함"으로 처리
+    disease: str | None = Field(default=None, max_length=100)
+    meds: str | None = Field(default=None, max_length=100)
+
+    _f = field_validator("height", "weight")(_finite)
 
     @field_validator("name")
     @classmethod
     def _name(cls, v: str) -> str:
         if not v.strip():
             raise ValueError("이름이 비어 있습니다")
-        return v.strip()
-
-    @field_validator("birth_date")
-    @classmethod
-    def _birth(cls, v: date | None) -> date | None:
-        if v and v > date.today():
-            raise ValueError("생년월일이 미래입니다")
-        return v
-
-
-class PatientUpdate(PatientCreate):
-    """보낸 필드만 바뀐다 (PATCH)."""
-    name: str | None = Field(default=None, min_length=1, max_length=100)
-    can_open: bool | None = None
-
-    @field_validator("name")
-    @classmethod
-    def _name(cls, v: str | None) -> str | None:
-        if v is None or not v.strip():
-            raise ValueError("이름은 비울 수 없습니다")
         return v.strip()
 
 

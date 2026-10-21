@@ -8,7 +8,7 @@ import serial
 import struct
 from MyThread import MyTimer
 import time
-import psycopg2
+import server_api   # 예전 psycopg2 직접 접속 → 중앙 서버 API
 
 
 
@@ -62,23 +62,9 @@ class WindowClass(QMainWindow, from_class) :
         self.readButton.clicked.connect(self.readRfid)
         self.camera_timer.timeout.connect(self.updateCamera)
 
-        try:
-            self.db_conn = psycopg2.connect(
-                host="localhost",
-                database="hospital_db",        # 방금 만든 DB 이름
-                user="postgres",               # 관리자 ID
-                password="1212",     # ◀◀◀ 아까 설정한 비밀번호로 꼭 바꿔주세요!
-                port="5432"
-            )
-            self.cursor = self.db_conn.cursor()
-            print("[DB 연결 성공] PostgreSQL 데이터베이스와 연동되었습니다.")
-            
-            # 프로그램 시작할 때 기존 DB에 저장되어 있던 환자 목록을 UI 테이블에 로드
-            self.load_patients_from_db()
-            
-        except Exception as e:
-            print(f"[DB 연결 실패] 데이터베이스 연결 오류: {e}")
-            self.db_conn = None
+        # 프로그램 시작할 때 서버에 저장되어 있던 환자 목록을 UI 테이블에 로드
+        print(f"[서버] {server_api.API} 에 연결합니다.")
+        self.load_patients_from_db()
 
         
 
@@ -88,16 +74,14 @@ class WindowClass(QMainWindow, from_class) :
         self.fileButton.clicked.connect(self.file)
 
     def load_patients_from_db(self):
-        if not self.db_conn: return
         try:
+            rows = server_api.list_patients()   # 예전 SELECT ... FROM patients ORDER BY p_num 과 같은 결과
             self.patientTable.setRowCount(0)
-            self.cursor.execute("SELECT p_num, name, gender, age, blood_type, height, weight, disease, meds FROM patients ORDER BY p_num ASC;")
-            rows = self.cursor.fetchall()
             for row_data in rows:
                 row = self.patientTable.rowCount()
                 self.patientTable.insertRow(row)
                 for col, data in enumerate(row_data):
-                    self.patientTable.setItem(row, col, QTableWidgetItem(str(data)))
+                    self.patientTable.setItem(row, col, QTableWidgetItem("" if data is None else str(data)))
             self.patientTable.resizeColumnsToContents()
         except Exception as e:
             print(f"[DB 로드 실패] {e}")
@@ -251,21 +235,14 @@ class WindowClass(QMainWindow, from_class) :
             elif self.bloodoButton.isChecked(): abo_type = "O"
             blood_str = f"{rh_type} {abo_type}"
 
-            if self.db_conn:
-                try:
-                    sql = """
-                        INSERT INTO patients (p_num, name, gender, age, blood_type, height, weight, disease, meds)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (p_num) 
-                        DO UPDATE SET name=%s, gender=%s, age=%s, blood_type=%s, height=%s, weight=%s, disease=%s, meds=%s;
-                    """
-                    data = (p_num, name_str, gender_str, age, blood_str, height, weight, disease_str, med_str,
-                            name_str, gender_str, age, blood_str, height, weight, disease_str, med_str)
-                    self.cursor.execute(sql, data)
-                    self.db_conn.commit()
-                except Exception as db_err:
-                    self.db_conn.rollback()
-                    print(f"[DB 저장 실패] {db_err}")
+            # 서버에 저장 (예전 INSERT ... ON CONFLICT (p_num) DO UPDATE 와 같음)
+            try:
+                server_api.save_patient(p_num, name_str, gender_str, age, blood_str,
+                                        height, weight, disease_str, med_str)
+            except server_api.ServerError as db_err:
+                print(f"[서버 저장 실패] {db_err}")
+                QMessageBox.warning(self, "저장 실패", str(db_err))
+                return
 
             # 2. struct 바이너리 패킷 생성 및 인코딩 패딩
             name_bytes = name_str.encode('utf-8')[:10].ljust(10, b'\x00')

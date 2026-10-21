@@ -4,7 +4,7 @@ GUI · PC2(얼굴 인식) · 낙상 감지 모듈 · Door MCU · CCTV MCU가 모
 각자 **자기 PC에서 서버를 켜서 개발·시험**할 수 있고, 시연 때는 PC1 한 대에서 켜고 모두 거기에 접속합니다.
 
 ```
- GUI ───────── HTTP / WebSocket ──┐
+ GUI ───────── HTTP · TCP 8080 ───┐
  PC2 얼굴 인식 ─ HTTP ─────────────┤
  낙상 감지 모듈 ─ HTTP ────────────┼──► [중앙 서버 :8101] ──► DB (PostgreSQL + pgvector)
  PC2 추적 ───── HTTP 또는 TCP 8102 ┤          │
@@ -74,7 +74,7 @@ python run.py --reload                        # --db 없이 실행하면 이 Doc
 1. 서버를 켠 PC의 IP를 확인합니다. `python run.py`로 켜면 화면에 표시되고, 아니면 Windows는 `ipconfig`, Mac/Linux는 `ip addr`로 봅니다. 예: `192.168.0.10`
 2. 방화벽에서 포트를 허용합니다.
    - **Windows:** 처음 실행할 때 뜨는 방화벽 창에서 "허용"
-   - **Linux:** `sudo ufw allow 8101 && sudo ufw allow 8103`
+   - **Linux:** `sudo ufw allow 8101 && sudo ufw allow 8102 && sudo ufw allow 8103 && sudo ufw allow 8080`
 3. 다른 PC에서 `http://192.168.0.10:8101/health`로 확인합니다.
 4. 모든 PC가 **같은 공유기(Wi-Fi)**에 연결돼 있어야 합니다. 학교망처럼 기기끼리 통신이 막힌 곳이라면 개인 공유기를 쓰세요.
 
@@ -82,6 +82,7 @@ python run.py --reload                        # --db 없이 실행하면 이 Doc
 |---|---|---|
 | **8101** | GUI, PC2, 낙상 모듈 | REST API, WebSocket `/ws`, 문서 `/docs` |
 | **8103** | Door MCU | 문 상태 `1`/`0` (TCP) |
+| **8080** | GUI 모니터링 화면 | `FALL`, `NORMAL`, `DOOR_IS_OPEN`, `DOOR_IS_CLOSE`, `RFID_IN:역할:번호:이름` (TCP 텍스트) |
 | 8102 | PC2 (선택) | 추적 좌표 TCP (`.env`의 `PC2_TCP_ENABLED=true`일 때만) |
 | 5432 | 서버만 | DB. 서버 PC 안에서만 열림 (다른 PC는 접속하지 않음) |
 
@@ -89,11 +90,24 @@ python run.py --reload                        # --db 없이 실행하면 이 Doc
 
 ## 3. 역할별 사용법
 
-### GUI 담당
-- 환자 목록·등록·수정·삭제, 문 상태, 알람 목록과 해제는 **REST API**로 처리합니다.
-- 문 상태 변화, 낙상 알람 팝업, 얼굴 식별 결과는 **WebSocket `ws://<서버>:8101/ws`**에 접속만 해 두면 자동으로 옵니다.
-- 예제: `python examples/gui_client_example.py --server 192.168.0.10:8101` (requests와 websockets 필요)
-- ⚠ 현재 `ui/hcc_gui`는 DB(`hospital_db`/`patients`)에 psycopg2로 직접 붙고, 서버를 TCP 8080 텍스트(`FALL`, `DOOR_IS_OPEN` …)로 기다립니다. 이 서버와는 아직 연결되지 않으니 위 REST/WebSocket으로 바꿔야 합니다.
+### GUI 담당 (`ui/hcc_gui`)
+서버가 **GUI가 원래 쓰던 형식에 맞춰져** 있습니다. GUI 쪽은 DB 직접 접속(psycopg2) 부분만 서버 호출로 바뀌었고, 화면·RFID·카메라 코드는 그대로입니다.
+- **환자 정보 필드가 GUI `patients` 표와 같습니다:** `p_num, name, gender, age, blood_type, height, weight, disease, meds`
+  - `p_num`이 곧 RFID 카드 번호이자 얼굴 등록 ID입니다(얼굴팀 `db_registered/2/*.jpg` → 2번 환자).
+  - 번호 범위로 역할이 정해집니다: **1~3000 Patient · 3001~4000 Visitor · 4001~5000 Staff**
+  - 같은 번호로 다시 등록하면 덮어씁니다(예전 `ON CONFLICT (p_num) DO UPDATE`와 같음). 빈 칸으로 보낸 키·몸무게 `0.0`은 저장하지 않습니다.
+- **모니터링 화면(TCP 8080):** "connect server" 버튼으로 접속하면 서버가 예전 형식 그대로 보냅니다.
+
+  | 서버가 보내는 줄 | 언제 |
+  |---|---|
+  | `FALL` | 낙상 알람 발생 |
+  | `NORMAL` | 알람 해제 (`/alerts/{id}/resolve`) |
+  | `DOOR_IS_OPEN` / `DOOR_IS_CLOSE` | Door MCU가 1 / 0 을 보냈을 때 |
+  | `RFID_IN:Patient:2:pikachu` | 문 앞 얼굴 인식 성공 (모르는 얼굴은 안 보냄) |
+
+  open/close 버튼이 보내는 `DOOR_OPEN`/`DOOR_CLOSE`는 **기록만** 합니다(문 개폐는 Door MCU 담당). `/health`의 `gui_tcp.last_commands`에서 확인할 수 있습니다.
+- **서버가 다른 PC에 있으면:** `HCC_SERVER=192.168.0.10 python3 patient_monitoring.py` (기본 `127.0.0.1`)
+- 웹 GUI 등 다른 화면을 만들 때는 REST와 WebSocket(`ws://<서버>:8101/ws`)을 써도 됩니다. 예제: `python examples/gui_client_example.py --server 192.168.0.10:8101`
 
 ### PC2 얼굴 인식 담당 (`service/ai_service/face_recongnition`)
 - **지금 코드 그대로 연결됩니다.** PC2의 `.env`에 아래 두 줄만 넣으면 `face_service.py`가 식별 결과를 서버로 보냅니다.
@@ -107,7 +121,7 @@ python run.py --reload                        # --db 없이 실행하면 이 Doc
   처음 보는 `patient_id`(예: `patient_001`)는 이름 없는 환자로 자동 생성됩니다(`FACE_AUTO_CREATE_PATIENT=true`). 이름 등은 나중에 GUI에서 채웁니다.
 - **식별:** 서버가 DB에서 가장 비슷한 사람을 찾아 `MATCHED`/`UNKNOWN`으로 답합니다. 이미 저장된 결과 JSON(`output/*.json`)도 같은 도구로 다시 보낼 수 있습니다.
 - **추적 좌표:** `webcam/detect_yolov3.py`가 TCP 8102로 보내는 `T,T,x,y,dx,dy` / `T,N,...` / `N,N` 줄을 그대로 받습니다. PC2 `.env`의 `PC1_TRACKING_HOST`를 서버 IP로 바꾸면 됩니다. (`PC2_TCP_ENABLED` 기본 켜짐)
-- 실물 없이 형식 확인: `python tools/fake_pc2.py register P0001` → `python tools/fake_pc2.py identify P0001`
+- 실물 없이 형식 확인: `python tools/fake_pc2.py register 2` → `python tools/fake_pc2.py identify 2` (2 = GUI에서 등록한 번호)
 
 ### 낙상 감지 모듈 담당 (`service/ai_service/fall_detection`)
 **① 서버 켜기 (내 PC에서 혼자 시험할 때)**
@@ -162,13 +176,14 @@ if is_fall:                                         # 모델이 낙상이라고 
 | SR | 부르는 쪽 | 메서드 · 주소 | 하는 일 |
 |---|---|---|---|
 | 공통 | 누구나 | `GET /health` | 서버·DB·장치 연결 상태 |
-| SR-02 | GUI | `GET /api/v1/patients` | 환자 목록 (이름·나이·성별·방·얼굴 등록 여부) |
-| SR-02 | GUI | `POST /api/v1/patients` | 환자 등록 → 코드 `P0001`부터 서버가 발급 |
-| SR-02 | GUI | `GET / PATCH / DELETE /api/v1/patients/{id}` | 조회 / 수정(보낸 필드만) / 삭제(비활성화 + 얼굴 데이터 삭제) |
-| SR-02 | GUI | `PUT /api/v1/patients/{id}/card` | 카드 UID 연결 |
+| SR-02 | GUI | `GET /api/v1/patients` | 등록된 사람 목록 (GUI 필드 + `role`, `face_registered`, `card_uid`) |
+| SR-02 | GUI | `PUT /api/v1/patients/{p_num}` (또는 `POST`에 `p_num` 포함) | 등록 · 덮어쓰기 |
+| SR-02 | GUI | `GET / DELETE /api/v1/patients/{p_num}` | 조회 / 삭제(비활성화 + 얼굴 데이터 삭제 + 카드 해제) |
+| SR-02 | GUI | `PUT /api/v1/patients/{p_num}/card` | 카드 UID 연결 |
 | SR-02 | PC2 | `POST /api/v1/face/templates` | 얼굴 특징벡터 등록 |
 | SR-05 | PC2 | `POST /api/v1/face/identify` | 얼굴 식별 (DB 유사도 검색) |
 | SR-04 | Door MCU | TCP 8103 `1` / `0` | 문 상태 보고 |
+| 전체 | GUI 모니터링 | TCP 8080 텍스트 | `FALL` / `NORMAL` / `DOOR_IS_OPEN` / `DOOR_IS_CLOSE` / `RFID_IN:...` 수신 |
 | SR-04 | GUI | `GET /api/v1/doors`, `GET /api/v1/doors/{id}/history` | 문 상태·연결 여부 / Door History |
 | SR-03 | 낙상 모듈 | `POST /api/v1/falls` | 낙상 이벤트 → 알람 생성 |
 | SR-03 | GUI | `GET /api/v1/alerts?status=ACTIVE` | 알람 목록 |
@@ -183,13 +198,14 @@ if is_fall:                                         # 모델이 낙상이라고 
 | `door_state` | 문 열림·닫힘, MCU 연결 끊김 | `{"door_id":"door_01","state":"OPEN","online":true}` |
 | `fall_alert` | 낙상 알람 발생 (팝업) | 알람 ID, 위치, 시각, 환자, 신뢰도 |
 | `alert_update` | 알람 확인·해제 | `{"alert_id":"...","status":"RESOLVED"}` |
-| `face_result` | 얼굴 식별 결과 | `result`, `person_id`, `name`, `similarity`, `can_open` |
-| `face_registered` | 얼굴 등록 완료 | `{"person_id":"P0001"}` |
+| `face_result` | 얼굴 식별 결과 | `result`, `p_num`, `role`, `name`, `similarity` |
+| `face_registered` | 얼굴 등록 완료 | `{"person_id":"2"}` |
+| `patient_changed` | 환자 등록·수정·삭제 | `{"p_num":2,"action":"created"}` |
 
 **공통 규칙**
 - **JSON 키:** `snake_case`
 - **시각:** 시간대가 포함된 ISO 8601 (`2026-10-21T15:00:00+09:00`). 시간대가 없으면 422
-- **ID:** 환자 `P0001`(서버 발급), 문 `door_01`, 카메라 `CAM01`(추적·낙상) · `FACE01`(문 앞 얼굴)
+- **ID:** 사람 `p_num` 숫자(GUI·RFID·얼굴 공통, 1~5000), 문 `door_01`, 카메라 `CAM01`(추적·낙상) · `FACE01`(문 앞 얼굴)
 - **에러:** `{"detail": "..."}`
 
 | 코드 | 의미 |
@@ -224,13 +240,14 @@ tsafe_server/
 │  ├─ auth.py                토큰 인증 (AUTH_ENABLED=true일 때만)
 │  ├─ events.py              WebSocket 실시간 알림 (type 목록)
 │  ├─ routers/               API — SR별 한 파일
-│  │  ├─ patients.py         SR-02 환자 등록·조회·수정·삭제, 카드 연결
+│  │  ├─ patients.py         SR-02 환자 등록·조회·삭제, 카드 연결 (GUI 필드 형식)
 │  │  ├─ face.py             SR-02/05 얼굴 등록, 얼굴 식별 (유사도 SQL = MATCH_SQL)
 │  │  ├─ doors.py            SR-04 문 상태·이력 조회
 │  │  ├─ falls.py            SR-03 카메라 등록, 낙상 수신, 알람 확인·해제
 │  │  └─ tracking.py         SR-06 추적 좌표 수신
 │  └─ services/              장치 통신
 │     ├─ door_receiver.py    Door MCU 1/0 수신 (TCP 8103)
+│     ├─ gui_tcp.py          GUI 모니터링 화면에 FALL/DOOR_IS_OPEN/RFID_IN 텍스트 전송 (TCP 8080)
 │     └─ tracking.py         CCTV MCU 시리얼 전송, PC2 추적 TCP 수신 (8102)
 │
 ├─ sql/                      서버가 쓰는 DB 추가분
@@ -285,6 +302,7 @@ pytest -q
 | `FACE_THRESHOLD` | `0.5` | 얼굴 유사도 기준. 얼굴팀 실측 후 조정 |
 | `FACE_AUTO_CREATE_PATIENT` | `true` | 얼굴 등록 때 처음 보는 환자 ID면 이름 없는 환자로 자동 생성. `false`면 404 |
 | `DOOR_TCP_PORT` | `8103` | Door MCU 접속 포트 |
+| `GUI_TCP_ENABLED`, `GUI_TCP_PORT` | `true`, `8080` | GUI 모니터링 화면용 TCP 텍스트 |
 | `DOOR_ID` | `door_01` | MCU가 ID 없이 1/0만 보낼 때 쓰는 문 ID |
 | `TRACK_SERIAL_PORT` | 비어 있음 | CCTV MCU 시리얼 포트 (`COM3`, `/dev/ttyUSB0`). 비우면 수신만 |
 | `TRACK_SERIAL_BAUD` | `115200` | CCTV MCU 통신 속도 |
@@ -302,6 +320,8 @@ pytest -q
 | `Address already in use` | 서버가 이미 켜져 있음. 이전 창을 끄거나 `python run.py --port 9000` |
 | 422 응답 | 응답의 `detail`에 틀린 필드가 나옴. 시각에 `+09:00`이 빠지는 실수가 가장 흔함 |
 | 얼굴 등록이 404 | `FACE_AUTO_CREATE_PATIENT=false`로 둔 경우. GUI에서 환자를 먼저 등록하거나 설정을 `true`로 |
+| GUI 목록이 비어 있음 / "서버 연결 실패" | 서버가 켜져 있는지, 다른 PC면 `HCC_SERVER` IP 확인 |
+| GUI "connect server"가 실패 | 서버의 8080 포트(`/health`의 `gui_tcp`), 방화벽 |
 | 추적 `received`가 안 늘어남 | 줄 끝 `\n` 누락(여러 줄이 한 줄로 붙어 버려짐), PC2의 `PC1_TRACKING_HOST` 확인 |
 | 낙상이 409 | 카메라 ID가 등록되지 않음. `POST /api/v1/cameras`로 먼저 등록 |
 | 문 상태가 안 바뀜 | MCU가 8103에 접속했는지 `/health`의 `doors_online`으로 확인. 줄 끝에 `\n`이 있는지 |
@@ -318,13 +338,13 @@ pytest -q
 | DB 준비 | 마이그레이션을 직접 적용 | 서버가 켜질 때 자동 적용 (`sql/02`) |
 | 문 (SR-04) | GUI 명령을 ERROR로만 기록 | Door MCU가 판단하고 1/0을 보고 → 서버가 기록·표시 |
 | 얼굴 등록 | 10분짜리 등록 요청 ID 발급 후 수신 | 활성 환자 코드로 바로 저장 |
-| 환자 ID | `patient_` + 무작위 20자 | `P0001` 순번 |
-| GUI 실시간 알림 | 없음 | WebSocket `/ws` |
+| 환자 ID | `patient_` + 무작위 20자 | GUI 번호 `p_num` (RFID·얼굴 공통) |
+| GUI 실시간 알림 | 없음 | TCP 8080 텍스트(GUI 기존 형식) + WebSocket `/ws` |
 | 낙상 이벤트 | PC2가 보냄 (`/falls/events`) | PC1 낙상 모듈이 보냄 (`/falls`) |
 
 **이번 범위에서 뺀 것** (필요해지면 Jira 이슈로): RFID 카드 실물 읽기·쓰기와 63바이트 동기화, 얼굴 등록 요청 세션, MCU `mcu_v02` 프로토콜.
 
 **팀이 정해야 할 것**은 `db/DECISIONS_REQUIRED.md`에 있습니다. 특히 다음 세 가지입니다.
-- 얼굴팀 기존 데이터의 `patient_001`과 서버가 발급하는 `P0001`을 어떻게 연결할지
+- ~~환자 ID 통일~~ → GUI 번호 `p_num`으로 통일. 얼굴팀은 등록 사진 폴더 이름을 번호로(`db_registered/2/`)
 - 얼굴 유사도 기준값
-- 출입 허용(`can_open`)을 누가 설정할지
+- 출입 허용: 지금은 GUI에 등록된 사람은 모두 허용(`can_open=true`). 바꿀지 결정
