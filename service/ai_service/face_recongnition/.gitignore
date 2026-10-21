@@ -1,0 +1,69 @@
+# Local configuration and credentials (commit only the empty template)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+secrets/
+
+# Face images, embeddings, queues, responses and generated results
+data/
+datasets/
+results/
+captures/
+output/
+runs/
+
+# Downloaded models and serialized arrays
+.models/
+.insightface/
+models/
+model_downloads/
+weights/
+*.pt
+*.pth
+*.onnx
+*.safetensors
+*.ckpt
+*.pkl
+*.pickle
+*.npy
+*.npz
+
+# Python environments and caches (also applies inside webcam/)
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+# Logs, local databases, backups and archives
+*.log
+*.db
+*.sqlite
+*.sqlite3
+*.tmp
+*.bak
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+
+# Editor and OS files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db

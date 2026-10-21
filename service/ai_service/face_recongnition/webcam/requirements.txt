@@ -1,0 +1,4 @@
+# Direct dependencies observed in the local webcam environment.
+# Install a PyTorch/torchvision build suitable for the target GPU separately.
+opencv-python==4.11.0.86
+ultralytics==8.4.178
