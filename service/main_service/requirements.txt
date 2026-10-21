@@ -1,0 +1,12 @@
+# 서버 실행에 필요한 패키지 (Python 3.10 이상)
+# 버전을 하나로 고정하지 않고 범위로 둔다 → 팀원 PC에 이미 깔린 버전과 충돌하지 않게.
+# 낙상·얼굴 AI 가상환경과는 따로, 서버 전용 가상환경(.venv)에 설치하는 것을 권장.
+fastapi>=0.110
+uvicorn[standard]>=0.27
+psycopg[binary]>=3.1
+pgvector>=0.2.5
+numpy>=1.24
+pyserial>=3.5
+# 시험용 (선택)
+pytest
+httpx

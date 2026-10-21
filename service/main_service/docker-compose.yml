@@ -1,0 +1,46 @@
+# 실행:   docker compose up -d --build     (DB + 서버. 처음엔 몇 분 걸림)
+# 로그:   docker compose logs -f server
+# 종료:   docker compose down              (DB 데이터 유지)
+# 주의:   docker compose down -v 는 DB 데이터까지 삭제
+#
+# DB 설정은 팀 DB 패키지(db/compose.yaml)와 같다: 서비스명 postgres, 계정 hcc_app, 볼륨 hcc_pgdata.
+# 그래서 이미 db/ 로 만들어 둔 DB가 있으면 그대로 이어서 쓴다.
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: hcc
+      POSTGRES_USER: hcc_app
+      POSTGRES_PASSWORD: ${HCC_DB_PASSWORD:-change_this_dev_password}
+    volumes:
+      - hcc_pgdata:/var/lib/postgresql/data
+      # 빈 DB를 처음 만들 때만 순서대로 실행된다
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./sql/02_server_upgrade.sql:/docker-entrypoint-initdb.d/02_server_upgrade.sql:ro
+      - ./sql/03_seed.sql:/docker-entrypoint-initdb.d/03_seed.sql:ro
+    ports:
+      - "127.0.0.1:5432:5432"     # DB는 PC1 안에서만. 팀원은 DB가 아니라 서버(8101)에 접속한다
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hcc_app -d hcc"]
+      interval: 2s
+      retries: 30
+
+  server:
+    build: .
+    env_file:                    # .env가 없어도 실행됨 (기본값 사용)
+      - path: .env
+        required: false
+    environment:
+      HCC_DB_DSN: postgresql://hcc_app:${HCC_DB_PASSWORD:-change_this_dev_password}@postgres:5432/hcc
+    ports:
+      - "8101:8101"   # REST API · WebSocket · /docs  ← 팀원이 접속하는 곳
+      - "8102:8102"   # PC2 추적값 TCP (PC2_TCP_ENABLED=true일 때)
+      - "8103:8103"   # Door MCU 문 상태 1/0 TCP
+    depends_on:
+      postgres: {condition: service_healthy}
+    restart: unless-stopped
+    # CCTV MCU를 USB로 연결할 때 (Linux): 주석을 풀고 .env에 TRACK_SERIAL_PORT=/dev/ttyUSB0
+    # devices: ["/dev/ttyUSB0:/dev/ttyUSB0"]
+
+volumes:
+  hcc_pgdata:
