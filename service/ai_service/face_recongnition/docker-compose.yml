@@ -1,0 +1,31 @@
+services:
+  insightface:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    working_dir: /app
+
+    volumes:
+      - ./app:/app
+      - ./data:/app/data
+      - ${INSIGHTFACE_MODEL_DIR:-./.models}:/root/.insightface:ro
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
+
+    environment:
+      PC1_EMBEDDING_URL: ${PC1_EMBEDDING_URL:-}
+      PC1_EMBEDDING_TOKEN: ${PC1_EMBEDDING_TOKEN:-}
+      DEVICE_ID: ${DEVICE_ID:-PC2}
+
+    command:
+      - python3
+      - face_service.py
+
+    restart: unless-stopped

@@ -1,0 +1,4 @@
+# Dependency image only: source, data and models use runtime mounts.
+**
+!Dockerfile
+!.dockerignore
