@@ -7,11 +7,17 @@
 - Current의 얼굴 등록/도어 화면은 사진 없는 기존 구성을 유지합니다.
 
 ## 영상 연결 범위
-이 ZIP만 실행하면 Camera 01 · Preview와 함께 샘플 정지 이미지를 표시합니다.
-실제 CCTV 전송 방식/주소는 첨부 파일에 없으므로 수신 프로그램은 연결하지 않았습니다.
-기존 영상 수신 코드가 프레임을 받으면 GUI 스레드에서 App.set_cctv_frame(QImage 또는 QPixmap)을 호출해 갱신할 수 있습니다.
-낙상 신호는 App.set_fall_detected(True/False)로 반영할 수 있으며 개인 식별/발생 시간은 받지 않습니다.
-워커에서 수신할 경우 Qt Signal로 GUI 스레드에 전달하십시오.
+기본값으로 Main Service의 `http://127.0.0.1:8101/api/v1/live/frame/camera_1`를 5 FPS로 조회합니다.
+JPEG와 분석 JSON을 함께 받아 사람 bbox·관절을 영상 위에 표시하고, `fall_confirmed`일 때만 FALL 알림을 표시합니다.
+개인 식별 정보나 발생 시간은 CCTV 화면에 표시하지 않습니다.
+
+서버 주소 또는 카메라 ID가 다르면 실행 전에 환경 변수를 지정합니다.
+
+```bash
+TSAFE_FRAME_IMAGE_URL=http://192.168.15.135:8101/api/v1/live/frame/camera_1/image python run.py
+```
+
+메타데이터 URL을 별도로 쓸 때만 `TSAFE_FRAME_METADATA_URL`을 지정합니다. GUI는 조회 전용이므로 AI 전송과 Main Service 수신 동작에는 영향을 주지 않습니다.
 
 ## 실행
 압축 해제 후 GUI/Current 폴더에서 .venv/bin/python3 run.py를 실행합니다.
