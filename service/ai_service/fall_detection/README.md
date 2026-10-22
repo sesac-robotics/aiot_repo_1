@@ -10,16 +10,17 @@ YOLO confidence, Fall 판정 기준, 미리보기, 선택적 메인 서비스 �
 있다. 카메라의 RTSP 주소도 확인된 뒤 `RTSP_SOURCES`에만 넣는다. 코드에는 카메라
 주소가 들어 있지 않다.
 
-영상 파일·USB 카메라처럼 실행마다 달라지는 입력은 명령행에서 고른다.
+프로젝트의 기본 카메라는 `config.py`의 `DEFAULT_RTSP_SOURCE`, `CAMERA_ID`,
+`CAMERA_LOCATION`에서 정한다. 따라서 평소에는 인자 없이 실행하면 된다.
 
 ```bash
 cd /home/jang/dev_ws/git_project_tenji/service/ai_service/fall_detection
-PYENV_VERSION=proj_iot pyenv exec python run_fall_detection.py --source <영상경로>
+PYENV_VERSION=proj_iot pyenv exec python run_fall_detection.py
 ```
 
-RTSP는 `config.py`에 `RTSP_SOURCES["octo"]`를 설정한 뒤 `--rtsp-source octo`로,
-USB 카메라는 `--camera-index 0`으로 시작한다. 결과 영상이나 JSONL을 저장하려면
-`--output`, `--results-jsonl` 옵션을 사용한다.
+일회성 입력은 `--source <영상경로>`, `--rtsp-source <이름>`, 또는
+`--camera-index 0`으로 덮어쓸 수 있다. 결과 영상이나 JSONL을 저장하려면 `--output`,
+`--results-jsonl` 옵션을 사용한다.
 
 ## PC1 분석 결과 전송
 

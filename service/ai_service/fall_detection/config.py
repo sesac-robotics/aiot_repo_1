@@ -1,8 +1,8 @@
 """Fall-detection component defaults.
 
-Change this file for this component's stable local settings.  A video path,
-USB camera index, or one-off RTSP URL is intentionally supplied at runtime
-through ``run_fall_detection.py`` rather than saved here.
+Change this file for this component's stable local settings.  The default
+camera can be started without command-line arguments; use command-line
+options only for one-off video, USB-camera, or RTSP overrides.
 """
 
 # Models and YOLO tracking
@@ -19,6 +19,12 @@ DEVICE = "auto"  # "auto", "cpu", or CUDA index such as "0"
 # unexpected.
 RTSP_SOURCES = {"octo": "rtsp://192.168.14.241:554/stream"}
 OPENCV_FFMPEG_CAPTURE_OPTIONS = "rtsp_transport;tcp"
+
+# Project's normal camera.  ``python run_fall_detection.py`` uses this source
+# and adds this stable context to every payload sent to the Main Service.
+DEFAULT_RTSP_SOURCE = "octo"
+CAMERA_ID = "camera_1"
+CAMERA_LOCATION = "ROOM_1"
 
 # Display and optional local artefacts
 SHOW_PREVIEW = True
@@ -51,5 +57,5 @@ STREAM_PROTOCOL = "rtsp-tcp"
 FRAME_API_URL = "http://192.168.15.135:8101/api/v1/live/frame"
 FRAME_MAX_WIDTH = 640
 FRAME_JPEG_QUALITY = 70
-FRAME_MAX_FPS = 5.0
+FRAME_MAX_FPS = 10.0   #전송 프레임
 FRAME_TIMEOUT_SECONDS = 3.0

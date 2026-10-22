@@ -205,12 +205,12 @@ def render_judgments(frame: cv2.typing.MatLike, observations: list[PoseObservati
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="YOLO Pose joint-sequence fall candidate detector")
-    source_group = parser.add_mutually_exclusive_group(required=True)
+    source_group = parser.add_mutually_exclusive_group()
     source_group.add_argument("--source", help="Local video path")
     source_group.add_argument("--rtsp-source", choices=RTSP_SOURCES, help="Named RTSP source")
     source_group.add_argument("--camera-index", type=int, help="Local USB/V4L2 webcam index, e.g. 2 for /dev/video2")
-    parser.add_argument("--camera-id", help="Stable camera identifier for JSONL; defaults to RTSP source name or local-video")
-    parser.add_argument("--camera-location", help="Human-readable installation location sent with every JSONL frame")
+    parser.add_argument("--camera-id", help="Stable camera identifier; defaults to config.CAMERA_ID")
+    parser.add_argument("--camera-location", help="Human-readable installation location; defaults to config.CAMERA_LOCATION")
     parser.add_argument("--model", default=config.POSE_MODEL, help="Pose checkpoint in models/ or an absolute path")
     parser.add_argument("--lstm-model", default=config.LSTM_MODEL, help="LSTM checkpoint in models/ or an absolute path")
     parser.add_argument("--tracker", default=config.TRACKER, help="Ultralytics tracker YAML")
@@ -264,6 +264,13 @@ def main() -> None:
     parser.set_defaults(latch_fall=config.LATCH_FALL)
     args = parser.parse_args()
 
+    # The deployed project normally uses its configured RTSP camera.  Keep the
+    # command-line source choices for one-off videos, USB cameras, and cameras.
+    if args.source is None and args.rtsp_source is None and args.camera_index is None:
+        args.rtsp_source = config.DEFAULT_RTSP_SOURCE
+    if args.rtsp_source and args.rtsp_source not in RTSP_SOURCES:
+        parser.error("configured default RTSP source must be a key in RTSP_SOURCES")
+
     if not 0 < args.conf <= 1 or args.imgsz <= 0 or args.max_det <= 0:
         parser.error("--conf must be in (0, 1]; --imgsz and --max-det must be positive")
     if args.max_frames is not None and args.max_frames <= 0:
@@ -293,7 +300,10 @@ def main() -> None:
     is_rtsp = bool(args.rtsp_source)
     try:
         default_camera_id = args.rtsp_source or (f"usb-camera-{args.camera_index}" if args.camera_index is not None else "local-video")
-        camera = build_camera_metadata(args.camera_id or default_camera_id, args.camera_location)
+        camera = build_camera_metadata(
+            args.camera_id or config.CAMERA_ID or default_camera_id,
+            args.camera_location if args.camera_location is not None else config.CAMERA_LOCATION,
+        )
     except ValueError as exc:
         parser.error(str(exc))
     if is_rtsp and urlsplit(source).scheme.lower() not in {"rtsp", "rtsps"}:
