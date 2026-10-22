@@ -55,7 +55,7 @@ class Settings:
     track_serial_baud: int = int(os.getenv("TRACK_SERIAL_BAUD", "115200"))
     track_camera_id: str = os.getenv("TRACK_CAMERA_ID", "CAM01")
 
-    # PC2 → PC1 추적값 TCP 수신 (한 줄 텍스트: "T,T,x,y,dx,dy" / "N,N")
+    # PC2 → PC1 추적값 TCP 수신 (새 TRACK Bounding Box, 기존 T/T,N,N도 호환)
     pc2_tcp_enabled: bool = _bool("PC2_TCP_ENABLED", True)
     pc2_tcp_port: int = int(os.getenv("PC2_TCP_PORT", "8102"))
 

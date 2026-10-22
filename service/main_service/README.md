@@ -106,7 +106,7 @@ python run.py --reload                        # --db 없이 실행하면 이 Doc
   `python tools/send_face_json.py <db_embeddings 폴더> --server <서버IP>:8101`
   처음 보는 `patient_id`(예: `patient_001`)는 이름 없는 환자로 자동 생성됩니다(`FACE_AUTO_CREATE_PATIENT=true`). 이름 등은 나중에 GUI에서 채웁니다.
 - **식별:** 서버가 DB에서 가장 비슷한 사람을 찾아 `MATCHED`/`UNKNOWN`으로 답합니다. 이미 저장된 결과 JSON(`output/*.json`)도 같은 도구로 다시 보낼 수 있습니다.
-- **추적 좌표:** `webcam/detect_yolov3.py`가 TCP 8102로 보내는 `T,T,x,y,dx,dy` / `T,N,...` / `N,N` 줄을 그대로 받습니다. PC2 `.env`의 `PC1_TRACKING_HOST`를 서버 IP로 바꾸면 됩니다. (`PC2_TCP_ENABLED` 기본 켜짐)
+- **추적 좌표:** `webcam/detect_yolov3.py`가 TCP 8102로 보내는 `TRACK,body,face,x1,y1,x2,y2,width,height` Bounding Box 줄을 받습니다. 구형 `T,T,x,y,dx,dy` / `T,N,...` / `N,N`도 호환합니다. PC2 `.env`의 `PC1_TRACKING_HOST`를 서버 IP로 바꾸면 됩니다. (`PC2_TCP_ENABLED` 기본 켜짐)
 - 실물 없이 형식 확인: `python tools/fake_pc2.py register P0001` → `python tools/fake_pc2.py identify P0001`
 
 ### 낙상 감지 모듈 담당 (`service/ai_service/fall_detection`)

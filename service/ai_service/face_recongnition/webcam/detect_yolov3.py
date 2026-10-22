@@ -321,7 +321,8 @@ def main():
             person = choose_person(people, screen_center)
             face_box = None
             if person is None:
-                pc1_message = "N,N\n"  # PC1용: 사람 없음, 얼굴 없음
+                # 새 Main Server 协议：无目标时四个框坐标统一为 -1。
+                pc1_message = f"TRACK,0,0,-1,-1,-1,-1,{width},{height}\n"
                 cv2.putText(frame, "No person detected", (10, 30),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
             else:
@@ -329,18 +330,20 @@ def main():
                 face = find_face(frame, person, face_detector)
                 if face is None:
                     target_cx, target_cy = body_cx, body_cy
+                    track_box = (x1, y1, x2, y2)
                     tracking_mode = "BODY"
                 else:
                     face_box, (target_cx, target_cy) = face
+                    track_box = face_box
                     tracking_mode = "FACE"
                     cv2.rectangle(frame, face_box[:2], face_box[2:], (255, 255, 0), 2)
 
                 dx, dy = target_cx - screen_center[0], target_cy - screen_center[1]
 
-                # PC1에는 얼굴 감지 여부 추가
-                face_flag = "T" if face is not None else "N"
+                # PC1 发送完整画面中的 Bounding Box；中心点只用于本地显示和截图。
                 pc1_message = (
-                    f"T,{face_flag},{target_cx},{target_cy},{dx},{dy}\n"
+                    f"TRACK,1,{int(face is not None)},{track_box[0]},{track_box[1]},"
+                    f"{track_box[2]},{track_box[3]},{width},{height}\n"
                 )
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                 cv2.circle(frame, (target_cx, target_cy), 5, (0, 0, 255), -1)

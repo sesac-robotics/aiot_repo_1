@@ -156,7 +156,11 @@ class AlertUpdate(_Strict):
 
 # ---------------------------------------------------------------- SR-06 추적
 class TrackingObservation(_Strict):
-    """추적 좌표. state=T면 x,y,dx,dy 필수, N(대상 없음)이면 좌표 없음."""
+    """추적 좌표 또는 Bounding Box.
+
+    새 클라이언트는 body/face와 x1..frame_height를 보낸다. 구형 클라이언트의
+    x/y/dx/dy 형식도 계속 허용한다.
+    """
     camera_id: str = Field(min_length=1, max_length=32)
     timestamp: datetime
     state: Literal["T", "N"]
@@ -165,11 +169,36 @@ class TrackingObservation(_Strict):
     dx: int | None = Field(default=None, ge=-1000, le=1000)
     dy: int | None = Field(default=None, ge=-1000, le=1000)
     face_detected: bool = False
+    body_detected: bool | None = None
+    x1: int | None = Field(default=None, ge=-1, le=8192)
+    y1: int | None = Field(default=None, ge=-1, le=8192)
+    x2: int | None = Field(default=None, ge=-1, le=8192)
+    y2: int | None = Field(default=None, ge=-1, le=8192)
+    frame_width: int | None = Field(default=None, ge=1, le=4096)
+    frame_height: int | None = Field(default=None, ge=1, le=4096)
 
     _t = field_validator("timestamp")(_aware)
 
     @model_validator(mode="after")
     def _coords(self):
+        bbox = (self.x1, self.y1, self.x2, self.y2,
+                self.frame_width, self.frame_height)
+        has_bbox = any(v is not None for v in bbox)
+        if has_bbox:
+            if any(v is None for v in bbox):
+                raise ValueError("Bounding Box 필드는 모두 필요합니다")
+            body = self.body_detected if self.body_detected is not None else self.state == "T"
+            if self.body_detected is not None and self.body_detected != (self.state == "T"):
+                raise ValueError("body_detected와 state가 일치하지 않습니다")
+            if self.face_detected and not body:
+                raise ValueError("body가 없으면 face_detected일 수 없습니다")
+            if body:
+                if not (0 <= self.x1 < self.x2 <= self.frame_width and
+                        0 <= self.y1 < self.y2 <= self.frame_height):
+                    raise ValueError("Bounding Box 범위를 벗어났습니다")
+            elif (self.x1, self.y1, self.x2, self.y2) != (-1, -1, -1, -1):
+                raise ValueError("대상 없음 Bounding Box는 -1이어야 합니다")
+            return self
         coords = (self.x, self.y, self.dx, self.dy)
         if self.state == "T" and None in coords:
             raise ValueError("state=T이면 x,y,dx,dy가 모두 필요합니다")

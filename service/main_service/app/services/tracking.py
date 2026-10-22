@@ -35,6 +35,7 @@ class TrackingBridge:
         self._last_t = 0.0
         self.received = 0
         self.last: dict | None = None
+        self._last_bbox = False
         self._stop = threading.Event()
 
     @property
@@ -51,7 +52,10 @@ class TrackingBridge:
         self._stop.set()
         if self._serial:
             try:
-                self._serial.write(b"N\n")
+                self._serial.write(
+                    (b"TRACK,0,0,-1,-1,-1,-1,640,480\n"
+                     if self._last_bbox else b"N\n")
+                )
             finally:
                 self._serial.close()
 
@@ -67,14 +71,23 @@ class TrackingBridge:
                 return {"accepted": False, "forwarded": False, "reason": "out_of_order"}
             self._last_ts = obs["timestamp"]
             self.received += 1
-            self.last = {k: obs.get(k) for k in ("camera_id", "timestamp", "state", "x", "y", "dx", "dy")}
+            self.last = {k: obs.get(k) for k in (
+                "camera_id", "timestamp", "state", "x", "y", "dx", "dy",
+                "body_detected", "face_detected", "x1", "y1", "x2", "y2",
+                "frame_width", "frame_height")}
+            self._last_bbox = obs.get("x1") is not None
             now = time.monotonic()
             if obs["state"] == "T" and now - self._last_sent < MIN_INTERVAL:
                 return {"accepted": True, "forwarded": False, "reason": "rate_limited"}
             if not self._serial:
                 return {"accepted": True, "forwarded": False, "reason": "serial_not_configured"}
-            line = ("N\n" if obs["state"] == "N"
-                    else f"T,{obs['x']},{obs['y']},{obs['dx']},{obs['dy']}\n")
+            if obs.get("x1") is not None:
+                line = (f"TRACK,{int(obs['body_detected'])},{int(obs['face_detected'])},"
+                        f"{obs['x1']},{obs['y1']},{obs['x2']},{obs['y2']},"
+                        f"{obs['frame_width']},{obs['frame_height']}\n")
+            else:
+                line = ("N\n" if obs["state"] == "N"
+                        else f"T,{obs['x']},{obs['y']},{obs['dx']},{obs['dy']}\n")
             self._serial.write(line.encode())
             self._last_sent = now
             self._last_t = now if obs["state"] == "T" else 0.0
@@ -85,7 +98,10 @@ class TrackingBridge:
             with self._lock:
                 if self._last_t and time.monotonic() - self._last_t > WATCHDOG_SEC:
                     try:
-                        self._serial.write(b"N\n")
+                        self._serial.write(
+                            (b"TRACK,0,0,-1,-1,-1,-1,640,480\n"
+                             if self._last_bbox else b"N\n")
+                        )
                     except Exception:
                         pass
                     self._last_t = 0.0
@@ -94,6 +110,22 @@ class TrackingBridge:
 def parse_pc2_line(raw: str) -> dict:
     """PC2 TCP 한 줄 → 관측값.  'T,T,x,y,dx,dy' (얼굴 있음) / 'T,N,...' (얼굴 없음) / 'N,N'"""
     parts = raw.strip().split(",")
+    if len(parts) == 9 and parts[0] == "TRACK":
+        try:
+            body, face, x1, y1, x2, y2, width, height = (int(p) for p in parts[1:])
+        except ValueError as exc:
+            raise ValueError("TRACK 숫자 형식 오류") from exc
+        if body not in (0, 1) or face not in (0, 1) or face > body:
+            raise ValueError("TRACK 상태 오류")
+        if not (1 <= width <= 4096 and 1 <= height <= 4096):
+            raise ValueError("TRACK 화면 크기 오류")
+        if body == 0 and (x1, y1, x2, y2) != (-1, -1, -1, -1):
+            raise ValueError("대상 없음 좌표 오류")
+        if body and not (0 <= x1 < x2 <= width and 0 <= y1 < y2 <= height):
+            raise ValueError("TRACK Bounding Box 범위 오류")
+        return {"state": "T" if body else "N", "face_detected": bool(face),
+                "body_detected": body, "x1": x1, "y1": y1, "x2": x2, "y2": y2,
+                "frame_width": width, "frame_height": height}
     if parts == ["N", "N"]:
         return {"state": "N", "face_detected": False}
     if len(parts) != 6 or parts[0] != "T" or parts[1] not in ("T", "N"):
