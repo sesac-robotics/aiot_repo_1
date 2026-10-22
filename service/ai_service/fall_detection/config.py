@@ -48,7 +48,7 @@ STREAM_PROTOCOL = "rtsp-tcp"
 # Unified live analysis delivery.  When FRAME_API_URL is set, the AI sends a
 # sampled raw JPEG and matching pose/fall JSON together in one HTTP multipart
 # request.  Leave it as None for local-only inference.
-FRAME_API_URL = None
+FRAME_API_URL = "http://192.168.15.135:8101/api/v1/live/frame"
 FRAME_MAX_WIDTH = 640
 FRAME_JPEG_QUALITY = 70
 FRAME_MAX_FPS = 5.0
