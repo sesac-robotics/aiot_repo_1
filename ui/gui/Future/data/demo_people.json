@@ -1,0 +1,58 @@
+[
+  {
+    "id": "P-001",
+    "name": "Alex Morgan",
+    "role": "Patient",
+    "sex": "Female",
+    "birth": "1958-04-12",
+    "blood": "A",
+    "rh": "+",
+    "height": "162",
+    "weight": "58",
+    "disease": "Hypertension",
+    "medicine": "Sample medicine",
+    "added": "2026-10-01"
+  },
+  {
+    "id": "P-002",
+    "name": "Jamie Lee",
+    "role": "Patient",
+    "sex": "Male",
+    "birth": "1951-11-03",
+    "blood": "O",
+    "rh": "-",
+    "height": "173",
+    "weight": "69",
+    "disease": "Osteoarthritis",
+    "medicine": "Sample medicine",
+    "added": "2026-10-02"
+  },
+  {
+    "id": "P-003",
+    "name": "Taylor Kim",
+    "role": "Patient",
+    "sex": "Female",
+    "birth": "1960-02-19",
+    "blood": "AB",
+    "rh": "+",
+    "height": "160",
+    "weight": "55",
+    "disease": "None",
+    "medicine": "None",
+    "added": "2026-10-03"
+  },
+  {
+    "id": "S-001",
+    "name": "Robin Park",
+    "role": "Admin",
+    "sex": "Female",
+    "birth": "1991-06-18",
+    "blood": "B",
+    "rh": "+",
+    "height": "165",
+    "weight": "56",
+    "disease": "None",
+    "medicine": "None",
+    "added": "2026-10-04"
+  }
+]
