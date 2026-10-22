@@ -8,7 +8,7 @@ GUI · PC2(얼굴 인식) · 낙상 감지 모듈 · Door MCU · CCTV MCU가 모
  PC2 얼굴 인식 ─ HTTP ─────────────┤
  낙상 감지 모듈 ─ HTTP ────────────┼──► [중앙 서버 :8101] ──► DB (PostgreSQL + pgvector)
  PC2 추적 ───── HTTP 또는 TCP 8102 ┤          │
- Door MCU ───── TCP 8103 (1/0) ────┘          └──► CCTV MCU (USB Serial, 팬틸트)
+ Door MCU ───── TCP 8103 (1/0) ────┘          └──► PC4 Bridge (TCP) ──► CCTV MCU (USB Serial, 팬틸트)
 ```
 
 ---
@@ -146,8 +146,13 @@ if is_fall:                                         # 모델이 낙상이라고 
 - 실물 없이 시험: `python tools/fake_door_mcu.py --server 192.168.0.10`
 
 ### CCTV MCU (팬틸트) 담당
-- 서버를 켠 PC에 USB로 연결하고 `.env`에 `TRACK_SERIAL_PORT`를 설정합니다. Windows는 `COM3`, Linux는 `/dev/ttyUSB0` 형식입니다.
-- 서버가 보내는 줄은 `T,x,y,dx,dy\n`(추적 중)과 `N\n`(대상 없음 → 정지) 두 가지입니다. 추적이 1.5초 끊기면 서버가 자동으로 `N`을 보냅니다.
+- Arduino는 PC4에 USB로 연결합니다. PC4에서 `device/cctv_tracking_servo/pc4_bridge.py --serial-port COM3 --tcp-port 8765`를 실행합니다.
+- PC1 `.env`에는 `TRACK_PC4_HOST=<PC4-IP>`, `TRACK_PC4_PORT=8765`를 설정합니다. PC1은 PC2의 `TRACK` 줄을 PC4 Bridge로 전달합니다.
+- PC4 Bridge는 `TRACK,...`/`DOOR,...` 줄을 Arduino Serial 115200으로 전달하고 Arduino의 ACK/EVENT를 TCP JSON으로 반환합니다.
+
+### PC4 카메라 → PC2 얼굴 인식
+- PC4에서 `device/cctv_tracking_servo/camera_stream_sender.py --pc2-host <PC2-IP> --pc2-port 8766`를 실행합니다.
+- PC2의 `webcam/detect_yolov3.py`는 `--frame-listen-port 8766`으로 프레임을 받고, 결과를 PC1의 TCP 8102로 보냅니다.
 
 ### 서버 담당
 - 5장의 폴더 구조를 보고 해당 SR 파일만 고치면 됩니다.

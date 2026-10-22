@@ -50,9 +50,11 @@ class Settings:
     door_tcp_port: int = int(os.getenv("DOOR_TCP_PORT", "8103"))
     default_door_id: str = os.getenv("DOOR_ID", "door_01")   # MCU가 ID 없이 1/0만 보낼 때
 
-    # SR-06 추적 → CCTV MCU (Arduino, USB Serial). 비워 두면 수신만 하고 전송 안 함.
+    # SR-06 추적 → PC4 CCTV MCU. PC4를 직접 연결하면 serial 대신 TCP를 설정한다.
     track_serial_port: str = os.getenv("TRACK_SERIAL_PORT", "")
     track_serial_baud: int = int(os.getenv("TRACK_SERIAL_BAUD", "115200"))
+    track_pc4_host: str = os.getenv("TRACK_PC4_HOST", "")
+    track_pc4_port: int = int(os.getenv("TRACK_PC4_PORT", "8765"))
     track_camera_id: str = os.getenv("TRACK_CAMERA_ID", "CAM01")
 
     # PC2 → PC1 추적값 TCP 수신 (새 TRACK Bounding Box, 기존 T/T,N,N도 호환)

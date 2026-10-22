@@ -8,8 +8,10 @@ PC2에서 추적·촬영하고 좌표는 PC1으로 TCP 전송한다. MCU 연결�
 import argparse
 import math
 import os
+import socket
 import time
 from coordinate_sender import CoordinateSender
+from camera_stream import recv_frame
 from datetime import datetime
 from pathlib import Path
 
@@ -225,7 +227,11 @@ def read_tcp_settings():
 def main():
     tcp_settings = read_tcp_settings()
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--camera", type=int, default=0, help="V4L2 camera index")
+    parser.add_argument("--camera", type=int, default=0, help="local camera index")
+    parser.add_argument("--frame-listen-host", default="0.0.0.0",
+                        help="PC2 address for the PC4 camera stream")
+    parser.add_argument("--frame-listen-port", type=int,
+                        help="receive JPEG frames from PC4 instead of opening a local camera")
     parser.add_argument("--model", type=Path, default=MODEL_PATH, help="YOLO model path")
     parser.add_argument("--out", type=Path, default=CAPTURE_DIR, help="캡처 저장 폴더")
     parser.add_argument("--no-eye-check", dest="eye_check", action="store_false",
@@ -271,11 +277,23 @@ def main():
         )
         if eye_detector.empty():
             raise RuntimeError("Cannot load OpenCV eye detector")
-    cap = cv2.VideoCapture(args.camera, cv2.CAP_V4L2)
-    if not cap.isOpened():
-        raise RuntimeError(f"Cannot open camera {args.camera}")
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    cap = None
+    listener = None
+    frame_sock = None
+    if args.frame_listen_port is None:
+        cap = cv2.VideoCapture(args.camera)
+        if not cap.isOpened():
+            raise RuntimeError(f"Cannot open camera {args.camera}")
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    else:
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind((args.frame_listen_host, args.frame_listen_port))
+        listener.listen(1)
+        print(f"[CAMERA] waiting for PC4 on {args.frame_listen_host}:{args.frame_listen_port}", flush=True)
+        frame_sock, address = listener.accept()
+        print(f"[CAMERA] PC4 connected: {address}", flush=True)
 
     last_send = 0.0
     capture_state = new_capture_state()
@@ -298,10 +316,13 @@ def main():
         while True:
             now = time.monotonic()
 
-            ok, frame = cap.read()
-            if not ok:
-                print("Camera frame unavailable")
-                break
+            if frame_sock is not None:
+                frame = recv_frame(frame_sock)
+            else:
+                ok, frame = cap.read()
+                if not ok:
+                    print("Camera frame unavailable")
+                    break
             raw = frame.copy()  # 촬영용 원본 (화면 표시용 그림이 들어가지 않게)
 
             height, width = frame.shape[:2]
@@ -388,7 +409,12 @@ def main():
             if coordinate_sender is not None:
                 coordinate_sender.close()
         finally:
-            cap.release()
+            if frame_sock is not None:
+                frame_sock.close()
+            if listener is not None:
+                listener.close()
+            if cap is not None:
+                cap.release()
             cv2.destroyAllWindows()
 
 if __name__ == "__main__":

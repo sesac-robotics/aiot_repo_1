@@ -1,4 +1,4 @@
-"""SR-06 추적 중계: 추적 좌표를 받아 CCTV MCU(Arduino, USB Serial)로 전달.
+"""SR-06 추적 중계: PC2 좌표를 PC4 CCTV MCU로 전달.
 
 MCU로 보내는 줄 형식 (기존 팀 규격 유지)
     T,<x>,<y>,<dx>,<dy>\\n     대상 추적 중
@@ -8,11 +8,12 @@ MCU로 보내는 줄 형식 (기존 팀 규격 유지)
     - 3초보다 오래된 좌표는 버림 (늦게 도착한 좌표로 모터가 움직이지 않게)
     - 초당 10번까지만 MCU로 전송 (N 정지 명령은 항상 즉시)
     - T가 1.5초 동안 안 오면 자동으로 N 전송 (추적 끊김 시 모터 정지)
-TRACK_SERIAL_PORT가 비어 있으면 수신만 하고 전송하지 않는다.
+PC4는 TCP(`TRACK_PC4_HOST`/`TRACK_PC4_PORT`) 또는 서버 직결 USB Serial로 선택한다.
 """
 from __future__ import annotations
 
 import asyncio
+import socket
 import threading
 import time
 from datetime import datetime, timezone
@@ -25,10 +26,13 @@ WATCHDOG_SEC = 1.5
 
 
 class TrackingBridge:
-    def __init__(self, serial_port: str, baud: int, camera_id: str) -> None:
+    def __init__(self, serial_port: str, baud: int, camera_id: str,
+                 pc4_host: str = "", pc4_port: int = 8765) -> None:
         self.camera_id = camera_id
         self._serial = None
+        self._socket = None
         self._port, self._baud = serial_port, baud
+        self._pc4_host, self._pc4_port = pc4_host, pc4_port
         self._lock = threading.Lock()
         self._last_ts: datetime | None = None
         self._last_sent = 0.0
@@ -40,24 +44,48 @@ class TrackingBridge:
 
     @property
     def mode(self) -> str:
-        return "serial" if self._serial else "receive_only"
+        if self._serial:
+            return "serial"
+        if self._socket:
+            return "pc4_tcp"
+        return "receive_only"
 
     def start(self) -> None:
         if self._port:
             import serial
             self._serial = serial.Serial(self._port, self._baud, timeout=0.1, write_timeout=0.2)
-            threading.Thread(target=self._watchdog, daemon=True).start()
+        threading.Thread(target=self._watchdog, daemon=True).start()
+
+    def _write(self, line: str) -> bool:
+        data = line.encode("ascii")
+        try:
+            if self._serial:
+                self._serial.write(data)
+                return True
+            if not self._pc4_host:
+                return False
+            if self._socket is None:
+                self._socket = socket.create_connection(
+                    (self._pc4_host, self._pc4_port), timeout=1.0)
+                self._socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            self._socket.sendall(data)
+            return True
+        except Exception:
+            if self._socket is not None:
+                self._socket.close()
+                self._socket = None
+            return False
 
     def close(self) -> None:
         self._stop.set()
+        line = ("TRACK,0,0,-1,-1,-1,-1,640,480\n" if self._last_bbox else "N\n")
+        if self._serial or self._pc4_host:
+            self._write(line)
         if self._serial:
-            try:
-                self._serial.write(
-                    (b"TRACK,0,0,-1,-1,-1,-1,640,480\n"
-                     if self._last_bbox else b"N\n")
-                )
-            finally:
-                self._serial.close()
+            self._serial.close()
+        if self._socket:
+            self._socket.close()
+            self._socket = None
 
     def forward(self, obs: dict) -> dict:
         """obs: camera_id, timestamp(datetime), state, x, y, dx, dy"""
@@ -79,7 +107,7 @@ class TrackingBridge:
             now = time.monotonic()
             if obs["state"] == "T" and now - self._last_sent < MIN_INTERVAL:
                 return {"accepted": True, "forwarded": False, "reason": "rate_limited"}
-            if not self._serial:
+            if not self._serial and not self._pc4_host:
                 return {"accepted": True, "forwarded": False, "reason": "serial_not_configured"}
             if obs.get("x1") is not None:
                 line = (f"TRACK,{int(obs['body_detected'])},{int(obs['face_detected'])},"
@@ -88,7 +116,8 @@ class TrackingBridge:
             else:
                 line = ("N\n" if obs["state"] == "N"
                         else f"T,{obs['x']},{obs['y']},{obs['dx']},{obs['dy']}\n")
-            self._serial.write(line.encode())
+            if not self._write(line):
+                return {"accepted": True, "forwarded": False, "reason": "pc4_unavailable"}
             self._last_sent = now
             self._last_t = now if obs["state"] == "T" else 0.0
             return {"accepted": True, "forwarded": True, "reason": "sent"}
@@ -98,10 +127,7 @@ class TrackingBridge:
             with self._lock:
                 if self._last_t and time.monotonic() - self._last_t > WATCHDOG_SEC:
                     try:
-                        self._serial.write(
-                            (b"TRACK,0,0,-1,-1,-1,-1,640,480\n"
-                             if self._last_bbox else b"N\n")
-                        )
+                        self._write("TRACK,0,0,-1,-1,-1,-1,640,480\n" if self._last_bbox else "N\n")
                     except Exception:
                         pass
                     self._last_t = 0.0
@@ -164,4 +190,10 @@ class PC2TCPReceiver:
             writer.close()
 
 
-bridge = TrackingBridge(settings.track_serial_port, settings.track_serial_baud, settings.track_camera_id)
+bridge = TrackingBridge(
+    settings.track_serial_port,
+    settings.track_serial_baud,
+    settings.track_camera_id,
+    settings.track_pc4_host,
+    settings.track_pc4_port,
+)
