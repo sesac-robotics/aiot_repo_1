@@ -8,7 +8,7 @@ from pathlib import Path
 
 import cv2
 
-WEBCAM_DIR = Path(__file__).resolve().parents[3] / "service" / "ai_service" / "face_recongnition" / "webcam"
+WEBCAM_DIR = Path(__file__).resolve().parents[2] / "service" / "ai_service" / "face_recongnition" / "webcam"
 sys.path.insert(0, str(WEBCAM_DIR))
 from camera_stream import send_frame  # noqa: E402
 
