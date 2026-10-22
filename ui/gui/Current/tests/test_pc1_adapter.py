@@ -22,7 +22,8 @@ class AdapterTest(unittest.TestCase):
    self.assertEqual(c.save({'person':person})['person_id'],'patient_SERVER');self.assertEqual(seen[0][0],'/api/v1/patients');self.assertEqual(seen[0][1]['blood_type'],'Rh- O');self.assertNotIn('id',seen[0][1])
    c.save({'person':person,'old_id':'patient_SERVER'});self.assertTrue(seen[-1][0].endswith('/patient_SERVER'));rows=c.patients();self.assertEqual(rows[0]['blood'],'O');self.assertEqual(rows[0]['rh'],'-');self.assertEqual(rows[0]['sex'],'Male')
    c.delete({'person':{'id':'patient_SERVER'}});self.assertIsNone(seen[-1][1])
-   with self.assertRaises(ValueError):c.save({'person':dict(person,role='Staff')})
+   c.save({'person':dict(person,role='Staff')});self.assertEqual(seen[-1][1]['role'],'Staff')
+   with self.assertRaises(ValueError):c.save({'person':dict(person,role='Doctor')})
   finally:
    srv.shutdown();srv.server_close()
    for k,v in [('TSAFE_PC1_URL',old_url),('TSAFE_ADMIN_TOKEN',old_token)]:

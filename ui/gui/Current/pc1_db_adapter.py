@@ -26,11 +26,11 @@ class PC1:
  def convert(p):
   blood=(p.get('blood_type') or '').upper().replace(' ','');rh='-' if '-' in blood else '+' if '+' in blood else '';blood=blood.replace('RH','').replace('+','').replace('-','')
   text=lambda k:'' if p.get(k) is None else str(p[k])
-  return {'id':p['person_id'],'name':text('name'),'role':'Patient','sex':{'M':'Male','F':'Female'}.get(p.get('gender'),''),'birth':text('birth_date')[:10],'blood':blood,'rh':rh,'height':text('height_cm'),'weight':text('weight_kg'),'disease':text('medical_history'),'medicine':text('medications'),'added':text('created_at')[:10]}
+  return {'id':p['person_id'],'name':text('name'),'role':p.get('role') or 'Patient','sex':{'M':'Male','F':'Female'}.get(p.get('gender'),''),'birth':text('birth_date')[:10],'blood':blood,'rh':rh,'height':text('height_cm'),'weight':text('weight_kg'),'disease':text('medical_history'),'medicine':text('medications'),'added':text('created_at')[:10]}
  def save(self,request):
   p=request['person']
-  if p['role']!='Patient':raise ValueError('PC1 v0.3 patient API supports Patient only; Staff/Admin needs a server endpoint')
-  fields={'name':p['name'],'gender':{'Male':'M','Female':'F'}[p['sex']],'birth_date':p['birth'],'height_cm':float(p['height']),'weight_kg':float(p['weight']),'blood_type':'Rh'+p['rh']+' '+p['blood'],'medical_history':p['disease'],'medications':p['medicine']}
+  if p['role'] not in ['Patient','Staff','Admin']:raise ValueError('role must be Patient, Staff or Admin')
+  fields={'role':p['role'],'name':p['name'],'gender':{'Male':'M','Female':'F'}[p['sex']],'birth_date':p['birth'],'height_cm':float(p['height']),'weight_kg':float(p['weight']),'blood_type':'Rh'+p['rh']+' '+p['blood'],'medical_history':p['disease'],'medications':p['medicine']}
   if request.get('old_id'):return self.call('PATCH','/api/v1/patients/'+quote(request['old_id'],safe=''),fields)
   return self.call('POST','/api/v1/patients',fields)
  def delete(self,request):return self.call('DELETE','/api/v1/patients/'+quote(request['person']['id'],safe=''))

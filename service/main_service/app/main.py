@@ -21,9 +21,11 @@ from psycopg.rows import dict_row
 from .config import settings
 from .db import get_conn
 from .events import hub
-from .routers import doors, face, falls, patients, tracking
+from .routers import doors, face, falls, frame_analysis, patients, tracking
 from .services.door_receiver import receiver as door_receiver
-from .services.tracking import PC2TCPReceiver, bridge
+from .services.door_control import controller as door_controller
+from .services.gui_notify import notifier as gui_notifier
+from .services.tracking import PC2TCPReceiver, bridge, pc4
 
 
 UPGRADE_SQL = Path(__file__).resolve().parents[1] / "sql" / "02_server_upgrade.sql"
@@ -35,7 +37,7 @@ SCHEMA_SQL = SQL_DIR / "db" / "schema.sql"
 SEED_SQL = SQL_DIR / "sql" / "03_seed.sql"
 
 
-def apply_db_upgrade() -> None:
+def apply_db_upgrade() -> bool:
     """DB 준비. 여러 번 실행해도 안전.
 
     - 빈 DB(테이블 없음)면 db/schema.sql → 서버 추가분 → 기본 장치(CAM01, door_01)까지 자동 생성
@@ -53,18 +55,31 @@ def apply_db_upgrade() -> None:
             if fresh:
                 conn.execute(SEED_SQL.read_text(encoding="utf-8"))
         print("[DB] 준비 완료", flush=True)
+        return True
     except Exception as exc:  # noqa: BLE001  DB가 아직 없으면 /health에서 확인 가능
         msg = str(exc)
         if "vector" in msg and ("extension" in msg or "control file" in msg):
             msg = "pgvector 확장이 설치되지 않은 PostgreSQL입니다. Docker 방법(A/B)을 쓰거나 pgvector를 설치하세요."
-        print(f"[DB] 준비 안 됨: {msg}", flush=True)
+        print(f"[DB] 준비 안 됨: {msg} → 5초마다 다시 시도", flush=True)
+        return False
+
+
+def _retry_db_upgrade() -> None:
+    """서버를 DB보다 먼저 켜도 되도록, DB가 켜질 때까지 준비(테이블 생성·업그레이드)를 다시 시도."""
+    import time
+    while not apply_db_upgrade():
+        time.sleep(5)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    apply_db_upgrade()
+    if not apply_db_upgrade():
+        import threading
+        threading.Thread(target=_retry_db_upgrade, name="db-retry", daemon=True).start()
     hub.bind_loop(asyncio.get_running_loop())
-    bridge.start()
+    bridge.start()                     # PC4 연결(추적·문 공용)도 여기서 시작
+    door_controller.start()
+    gui_notifier.start()
     await door_receiver.start()
     receiver = PC2TCPReceiver(bridge, settings.pc2_tcp_port) if settings.pc2_tcp_enabled else None
     if receiver:
@@ -73,10 +88,11 @@ async def lifespan(app: FastAPI):
     if receiver:
         await receiver.stop()
     await door_receiver.stop()
+    door_controller.stop()
     bridge.close()
 
 
-app = FastAPI(title="T-SAFE PC1 Server", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="T-SAFE PC1 Server", version="2.0.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])  # 웹 GUI 허용
 
 
@@ -86,7 +102,9 @@ async def db_down(_request, exc):
     log.error("DB 연결 실패: %s", exc)
     return JSONResponse(status_code=503, content={"detail": "DB에 연결할 수 없습니다. DB(PostgreSQL)가 켜져 있는지 확인하세요."})
 
-for r in (patients.router, face.router, doors.router, falls.router, tracking.router):
+app.include_router(patients.router, prefix="/api/v1/patients")
+app.include_router(patients.router, prefix="/api/v1/persons")   # 같은 기능 (직원·관리자도 등록하므로)
+for r in (face.router, doors.router, falls.router, tracking.router, frame_analysis.router):
     app.include_router(r)
 
 
@@ -101,7 +119,9 @@ def health():
         db = f"error: {type(exc).__name__}"
     return {"server": "ok", "db": db, "auth_enabled": settings.auth_enabled,
             "door_tcp_port": settings.door_tcp_port, "doors_online": sorted(door_receiver.connected),
-            "tracking_mcu": bridge.mode, "pc2_tcp": settings.pc2_tcp_port if settings.pc2_tcp_enabled else "off"}
+            "tracking_mcu": bridge.mode, "pc2_tcp": settings.pc2_tcp_port if settings.pc2_tcp_enabled else "off",
+            "pc4": {**pc4.status(), **door_controller.status()},
+            "gui_events": gui_notifier.status()}
 
 
 @app.websocket("/ws")

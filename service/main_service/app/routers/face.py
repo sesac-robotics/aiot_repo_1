@@ -57,7 +57,13 @@ def register_template(body: FaceTemplate):
 
 @router.post("/identify")
 def identify(body: FaceIdentify):
-    """문 앞 얼굴 → 가장 비슷한 사람 검색 → MATCHED / UNKNOWN 판정. (문 개폐는 Door MCU가 판단)"""
+    """문 앞 얼굴 → 가장 비슷한 사람 검색 → 출입 판정 → (권한 있으면) 문 열기.   명세 2-④ ~ ⑧
+
+    MATCHED + 출입 권한(직원·관리자)  → allowed=true,  PC4에 DOOR,OPEN 전송      (case 2)
+    MATCHED + 권한 없음(환자)         → allowed=false, GUI에 출입 거부 표시      (case 1)
+    UNKNOWN                           → allowed=false, GUI에 Unknown 표시
+    판정은 hcc.access_events에 ALLOW/DENY로 남는다.
+    """
     if body.status != "OK":
         # 얼굴 없음·여러 명·오류: 받기만 하고 판단하지 않음
         return {"event_id": body.event_id, "accepted": True, "processed": False,
@@ -79,13 +85,32 @@ def identify(body: FaceIdentify):
              result, best["similarity"] if best else None, body.model, body.timestamp)).fetchone()
 
     duplicate = inserted is None
+    allowed = bool(matched and best["can_open"])
+    door_command = None
+    if not duplicate:
+        reason = ("authorized" if allowed else "no_permission") if matched else "unknown_face"
+        if allowed:
+            from ..services.door_control import controller   # 순환 import 피하기
+            door_command = controller.open(settings.default_door_id, "FACE_AUTH", best["person_id"], body.event_id)
+        with get_conn() as conn:
+            conn.execute("INSERT INTO hcc.doors (door_id) VALUES (%s) ON CONFLICT DO NOTHING",
+                         (settings.default_door_id,))
+            conn.execute("""INSERT INTO hcc.access_events
+                                (identification_event_id, person_id, door_id, decision, reason, command_id)
+                            VALUES (%s, %s, %s, %s, %s, %s)""",
+                         (body.event_id, best["person_id"] if matched else None, settings.default_door_id,
+                          "ALLOW" if allowed else "DENY", reason,
+                          door_command.get("command_id") if door_command else None))
     response = {
         "event_id": body.event_id, "accepted": True, "processed": True,   # 얼굴팀 전송 대기열이 accepted로 삭제 판단
         "result": result, "duplicate": duplicate,
         "person_id": best["person_id"] if matched else None,
         "name": best["name"] if matched else None,
         "similarity": round(best["similarity"], 4) if best else None,
-        "can_open": bool(matched and best["can_open"]),
+        "role": best["person_type"].title() if matched else "Unknown",   # Patient / Staff / Admin
+        "allowed": allowed,
+        "can_open": allowed,                                             # (이전 이름, 호환용)
+        "door_command": door_command,                                    # 문 열기 요청 결과 (권한 있을 때만)
     }
     if not duplicate:
         publish("face_result", response)

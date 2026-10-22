@@ -37,14 +37,15 @@ def parse_line(raw: str) -> tuple[str, str]:
     return door_id, STATE[value.strip()]
 
 
-def record_state(door_id: str, state: str, peer: str | None = None) -> bool:
-    """상태가 바뀌었으면 DB에 기록하고 True. 같은 상태면 False."""
+def record_state(door_id: str, state: str, peer: str | None = None, force: bool = False) -> bool:
+    """상태가 바뀌었으면 DB에 기록하고 True. 같은 상태면 False.
+    force=True: 문 열기 명령으로 실제 동작한 결과(PC4 EVENT)라서 같은 상태여도 기록·알림."""
     with get_conn() as conn:
         row = conn.execute("SELECT reported_state FROM hcc.doors WHERE door_id = %s FOR UPDATE",
                            (door_id,)).fetchone()
         if row is None:   # 처음 보는 문은 자동 등록
             conn.execute("INSERT INTO hcc.doors (door_id) VALUES (%s)", (door_id,))
-        elif row["reported_state"] == state:
+        elif row["reported_state"] == state and not force:
             return False
         conn.execute("""UPDATE hcc.doors SET reported_state = %s, state_source = 'MCU_REPORT', updated_at = NOW()
                         WHERE door_id = %s""", (state, door_id))

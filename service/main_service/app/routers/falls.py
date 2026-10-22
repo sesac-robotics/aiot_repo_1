@@ -1,6 +1,7 @@
 """SR-03 낙상 · 알람: 낙상 이벤트 수신 → 알람 생성 → GUI 팝업 → 확인/해제."""
 from __future__ import annotations
 
+import json
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -30,30 +31,41 @@ def list_cameras():
 
 @router.post("/api/v1/falls", status_code=201, dependencies=[Depends(auth.device)])
 def receive_fall(body: FallEvent):
-    """낙상 감지 모듈이 호출. 같은 event_id를 다시 보내면 기존 알람을 돌려준다(중복 방지)."""
-    import json
+    """낙상 이벤트 1건 (예전 방식, 계속 사용 가능). 실시간 프레임 방식은 POST /api/v1/live/frame.
+    같은 event_id를 다시 보내면 기존 알람을 돌려준다(중복 방지)."""
     with get_conn() as conn:
-        cam = conn.execute("SELECT location FROM hcc.cameras WHERE camera_id = %s", (body.camera_id,)).fetchone()
-        if not cam:
+        if not conn.execute("SELECT 1 FROM hcc.cameras WHERE camera_id = %s", (body.camera_id,)).fetchone():
             raise HTTPException(409, f"등록되지 않은 카메라입니다: {body.camera_id}")
-        location = body.location or cam["location"]   # 위치가 없으면 카메라 위치로
+    alert, new = record_fall(body.model_dump())
+    return {**alert, "duplicate": not new}
+
+
+def record_fall(ev: dict) -> tuple[dict, bool]:
+    """낙상 1건을 fall_events + alerts에 한 트랜잭션으로 저장.   명세 3-③
+    ev: event_id, camera_id, occurred_at, event_type, person_id, track_id, location, confidence, bbox_xyxy
+    반환: (알람 정보, 새로 만들었는지)"""
+    with get_conn() as conn:
+        cam = conn.execute("SELECT location FROM hcc.cameras WHERE camera_id = %s", (ev["camera_id"],)).fetchone()
+        location = ev.get("location") or (cam["location"] if cam else None)   # 위치가 없으면 카메라 위치로
+        bbox = ev.get("bbox_xyxy")
         new = conn.execute("""
             INSERT INTO hcc.fall_events (event_id, person_id, camera_id, track_id, event_type,
                                          occurred_at, location, confidence, bbox_xyxy)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (event_id) DO NOTHING RETURNING event_id""",
-            (body.event_id, body.person_id, body.camera_id, body.track_id, body.event_type, body.occurred_at,
-             location, body.confidence, json.dumps(body.bbox_xyxy) if body.bbox_xyxy else None)).fetchone()
+            (ev["event_id"], ev.get("person_id"), ev["camera_id"], ev.get("track_id"),
+             ev.get("event_type") or "FALL", ev["occurred_at"], location, ev.get("confidence"),
+             json.dumps(bbox) if bbox else None)).fetchone()
         if new:
-            conn.execute("INSERT INTO hcc.alerts (fall_event_id) VALUES (%s)", (body.event_id,))
+            conn.execute("INSERT INTO hcc.alerts (fall_event_id) VALUES (%s)", (ev["event_id"],))
         alert = conn.execute("""SELECT a.alert_id, a.status, f.event_id, f.event_type, f.camera_id, f.location,
-                                       f.occurred_at, f.person_id, p.name AS person_name, f.confidence
+                                       f.occurred_at, f.person_id, p.name AS person_name, f.confidence, f.track_id
                                 FROM hcc.alerts a JOIN hcc.fall_events f ON f.event_id = a.fall_event_id
                                 LEFT JOIN hcc.persons p ON p.person_id = f.person_id
-                                WHERE a.fall_event_id = %s""", (body.event_id,)).fetchone()
+                                WHERE a.fall_event_id = %s""", (ev["event_id"],)).fetchone()
     if new:
         publish("fall_alert", alert)
-    return {**alert, "duplicate": new is None}
+    return alert, bool(new)
 
 
 @router.get("/api/v1/alerts", dependencies=[Depends(auth.admin)])
@@ -90,3 +102,18 @@ def resolve(alert_id: str, body: AlertUpdate):
                                 handled_by = COALESCE(%s, handled_by), resolution_note = %s
                                 WHERE alert_id = %s::uuid AND status <> 'RESOLVED' RETURNING alert_id""",
                    (body.staff_id, body.note, alert_id), "RESOLVED")
+
+
+@router.post("/api/v1/alerts/resolve_active", dependencies=[Depends(auth.admin)])
+def resolve_active(body: AlertUpdate):
+    """GUI 'Emergency release' 버튼: 아직 해제 안 된 알람을 모두 해제.   명세 3. 알람 해제 ①~③
+    GUI는 알람 번호를 몰라도 된다. 해제된 알람마다 GUI에 fall detected:false(NORMAL)가 간다."""
+    with get_conn() as conn:
+        rows = conn.execute("""UPDATE hcc.alerts SET status = 'RESOLVED', resolved_at = NOW(),
+                                      acknowledged_at = COALESCE(acknowledged_at, NOW()),
+                                      handled_by = COALESCE(%s, handled_by), resolution_note = %s
+                               WHERE status <> 'RESOLVED' RETURNING alert_id""",
+                            (body.staff_id, body.note)).fetchall()
+    for r in rows:
+        publish("alert_update", {"alert_id": str(r["alert_id"]), "status": "RESOLVED"})
+    return {"resolved": [str(r["alert_id"]) for r in rows], "count": len(rows)}
