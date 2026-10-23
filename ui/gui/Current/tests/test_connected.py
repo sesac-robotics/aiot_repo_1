@@ -1,5 +1,6 @@
 """Real HTTP + headless Qt tests, with temporary SQLite and an in-memory PC1 API."""
 import json
+from contextlib import nullcontext
 import os
 from pathlib import Path
 import shutil
@@ -12,7 +13,7 @@ import threading
 import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 BASE = Path(__file__).resolve().parents[1]
@@ -232,6 +233,32 @@ class ConnectedTest(unittest.TestCase):
             self.assertEqual(window.doorState.text(), 'UNKNOWN')
         self.assertEqual(notifier.sent, 3)
         self.assertEqual(notifier.failed, 0)
+
+    def test_pc4_door_feedback_updates_gui_open_and_closed(self):
+        from app.services import door_control
+        from app.services.door_control import DoorController
+        from app.services.pc4_link import PC4Link, parse_feedback
+        notifier = GuiNotifier()
+        notifier.url = self.gui_url + '/events'
+        notifier._token = lambda: self.bridge.token
+        threading.Thread(target=notifier._worker, daemon=True).start()
+        controller = DoorController(Mock(spec=PC4Link), protocol='v')
+        controller._pending[1] = {'door_id': 'door_01', 'command_id': 'test-command',
+                                  'sent_at': time.monotonic(), 'accepted': False}
+        connection = Mock()
+        connection.execute.return_value.fetchone.return_value = {'door_id': 'door_01', 'command_id': 'test-command'}
+        def state(door_id, value, peer, force=False):
+            notifier.on_event('door_state', {'door_id': door_id, 'state': value})
+        with patch.object(door_control, 'get_conn', return_value=nullcontext(connection)), \
+             patch.object(door_control, 'record_state', side_effect=state), \
+             patch.object(door_control, 'publish'):
+            for raw, expected in [('DOOR,1\r\n', 'OPEN'), ('DOOR,0\r\n', 'CLOSED')]:
+                controller.on_feedback(parse_feedback(raw))
+                self.pump(lambda: self.a.windows['door_access'].doorState.text() == expected)
+                self.assertEqual(self.a.windows['door_access'].doorState.text(), expected)
+        self.assertEqual(controller.status()['pending'], 0)
+        self.assertEqual(notifier.sent, 2)
+        self.assertEqual([row['event'] for row in self.a.store.events()], ['Door closed', 'Door opened'])
 
     def test_launcher_runs_gui_and_adapter_and_stops_both(self):
         self.rows.append({'person_id': 'S0001', 'name': 'Server staff', 'role': 'Staff'})

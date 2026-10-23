@@ -19,6 +19,33 @@ GUI 이벤트 포트는 한 컴퓨터에서 PC4 Bridge의 TCP 8765와 겹치지 
 Confirm/Emergency release 동작과 CCTV 영상 표시는 이번 변경 대상이 아닙니다.
 문 상태는 실제 장치 이벤트를 받기 전까지 UNKNOWN이며 출입 허용만으로 OPEN으로 바꾸지 않습니다.
 
+시연에서 PC4 상태 회신 없이 전송 직후 GUI에 OPEN을 표시하려면 서버 `.env`에
+`GUI_DOOR_OPEN_ON_SEND=true`를 지정하고 서버를 재시작합니다. 기본값은 false입니다.
+이 모드에서는 문 열기 전송에 성공했을 때만 화면에 OPEN을 보내며, 실제 문이 열렸다는
+DB 기록이나 PC4 응답을 만들지 않습니다. 닫힘 회신이 없으면 자동으로 CLOSED로 바꾸지 않습니다.
+시연 후 false로 되돌리고 서버를 재시작하면 실제 회신만 표시하는 동작으로 복귀합니다.
+
+### 실제 문은 열리지만 GUI 상태가 바뀌지 않을 때
+
+서버 `/health`의 `pc4.received`가 0이면 PC4의 상태 회신을 먼저 확인합니다.
+팀에서 사용하는 V 프로토콜 Bridge는 Arduino의 `Serial.println`이 보내는
+`DOOR,1\r\n`에서 줄 끝 `\r`을 제거한 뒤 검사해야 합니다. 그렇지 않으면
+`feedback in (b"DOOR,0", b"DOOR,1")` 조건에 걸리지 않아 상태가 서버에 전달되지 않습니다.
+
+PC4의 실제 Bridge 파일에서 해당 `if feedback.startswith(...)` 줄 바로 앞에 추가합니다.
+
+```python
+feedback = feedback.rstrip(b"\r")
+```
+
+같은 수정을 자동 적용하려면 이 저장소의 `device/door_face_camera/fix_pc4_feedback.py`를
+PC4로 옮기고 `python3 fix_pc4_feedback.py /실제/Bridge파일.py`를 실행합니다.
+이 도구는 수정 전 `.before-crlf-fix` 백업을 만들고, 예상 코드가 없으면 수정을 중단합니다.
+수정 후 PC4 Bridge만 재시작하고 새로 얼굴을 인식시켜 주세요.
+PC4에 `[TCP] -> PC1 DOOR,1`이 찍히면 GUI에 OPEN, `DOOR,0`이면 CLOSED가 표시됩니다.
+로컬 저장소의 기존 `device/cctv_tracking_servo/pc4_bridge.py`는 별도 구형 프로토콜이므로
+V 프로토콜 Bridge 대신 실행하지 마세요.
+
 ## 1. DB 켜기
 
 이미 켜져 있으면 그대로 사용합니다. 이 명령은 기존 볼륨을 삭제하지 않습니다.

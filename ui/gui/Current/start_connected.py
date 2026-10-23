@@ -74,6 +74,9 @@ def main(argv=None):
         # Refuse to attach an adapter to a different GUI already using the same port.
         import socket
         with socket.socket() as probe:
+            # Match ThreadingHTTPServer: permit restart after TIME_WAIT, while
+            # an active listener still prevents binding this address.
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             probe.bind((env['GUI_EVENT_HOST'], int(env['GUI_EVENT_PORT'])))
         gui = subprocess.Popen([sys.executable, str(ROOT / 'run.py')], cwd=ROOT, env=env)
         children.append(gui)
