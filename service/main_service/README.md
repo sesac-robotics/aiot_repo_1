@@ -315,3 +315,33 @@ v2는 팀원 실제 코드로도 확인했습니다: `pc4_bridge.py`(가상 시�
 | 알람 해제 | 알람 ID 필요 | `resolve_active` (Emergency release) |
 | GUI 알림 | WebSocket만 | 관리자 GUI 이벤트 수신기로 recognition/door/fall 전송 |
 | 서버 시작 | DB가 먼저 켜져 있어야 함 | DB가 늦게 켜져도 자동 준비 |
+
+## V 프로토콜을 사용하는 PC4 Arduino 연결
+
+PC4의 Python Bridge가 `TRACK,...` 또는 `V,body,face,dx,dy,doorPulse`를 받고,
+Arduino의 `DOOR,1`/`DOOR,0`을 TCP로 돌려주는 경우 서버 `.env`에 다음을 설정합니다.
+
+```dotenv
+PC4_HOST=192.168.15.132
+PC4_PORT=8765
+PC4_DOOR_PROTOCOL=v
+```
+
+서버는 얼굴 출입 허용 시 최근 추적값을 보존한 V 명령의 마지막 필드를
+`0 → 1 → 0`으로 전송합니다. 1은 닫힘 명령이 아니라 문 열기 상승 펄스이며,
+마지막 0은 다음 요청을 받기 위한 초기화입니다. 닫힘 시점은 Arduino가 결정합니다.
+추적은 기존 `TRACK` 형식으로 계속 보내며 PC4 Bridge가 V로 변환합니다.
+오래된 추적값은 문 명령에 재사용하지 않습니다.
+
+`DOOR,1`이 실제 수신되면 해당 대기 요청을 ACCEPTED/OPEN으로 기록하고 GUI에
+OPEN을 보냅니다. `DOOR,0`이 수신되면 GUI에 CLOSED를 보냅니다. 기본 설정에서는 전송 성공만으로
+GUI를 OPEN으로 바꾸지 않습니다. 시연용 `GUI_DOOR_OPEN_ON_SEND=true`를 켜면
+전송 성공 직후 GUI에 OPEN을 표시하지만 DB 문 상태나 명령 응답을 생성하지는 않습니다.
+닫힘 회신이 없으면 화면은 OPEN으로 유지됩니다. V 피드백에는 요청 번호가 없으므로 미응답 문
+요청은 하나씩 처리하고, 응답 없는 상태에서 새 요청이 들어오면 SKIPPED 처리합니다.
+문이 이미 열려 있어 Arduino가 새 `DOOR,1`을 생략하면 후속 요청이 TIMEOUT으로
+기록될 수 있습니다. 이 경우 마지막으로 보고된 문 상태는 OPEN으로 유지됩니다.
+
+설정을 바꾼 뒤 중앙 서버를 재시작합니다. `/health`의 `pc4.door_protocol`이 `v`인지
+확인하고, PC4 응답이 오면 `pc4.received`가 증가하는지 확인하세요.
+기존 저장소 Bridge/펌웨어는 기본값 `PC4_DOOR_PROTOCOL=door`를 사용합니다.

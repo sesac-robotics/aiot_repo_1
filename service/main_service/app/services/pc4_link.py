@@ -66,6 +66,7 @@ class PC4Link:
         self._thread: threading.Thread | None = None
         self.last_error: str | None = None
         self.received = 0
+        self._last_tracking = None  # (monotonic timestamp, body/face/dx/dy)
 
     @property
     def enabled(self) -> bool:
@@ -112,6 +113,7 @@ class PC4Link:
                 except OSError:
                     pass
                 self._sock = None
+            self._last_tracking = None
 
     def send(self, line: str) -> bool:
         """한 줄 보내기. 연결이 없으면 한 번 접속을 시도하고, 실패하면 False."""
@@ -123,6 +125,57 @@ class PC4Link:
         try:
             with self._lock:
                 sock.sendall(line.encode("ascii"))
+                if line.startswith("TRACK,"):
+                    state = self._v_tracking_state(line)
+                    if state is not None:
+                        self._last_tracking = (time.monotonic(), state)
+            return True
+        except OSError as exc:
+            self.last_error = f"send: {exc}"
+            self._drop()
+            return False
+
+    @staticmethod
+    def _v_tracking_state(line: str):
+        parts = line.strip().split(",")
+        if len(parts) != 9 or parts[0] != "TRACK":
+            return None
+        try:
+            body, face, x1, y1, x2, y2, width, height = map(int, parts[1:])
+        except ValueError:
+            return None
+        if body not in (0, 1) or face not in (0, 1) or face > body or min(width, height) <= 0:
+            return None
+        if not body:
+            return (0, 0, 0, 0)
+        if not (0 <= x1 < x2 <= width and 0 <= y1 < y2 <= height):
+            return None
+        short_edge = min(width, height)
+        dx = round(((x1 + x2) - width) * 1000 / (2 * short_edge))
+        dy = round(((y1 + y2) - height) * 1000 / (2 * short_edge))
+        return body, face, max(-1000, min(1000, dx)), max(-1000, min(1000, dy))
+
+    def send_open_pulse(self) -> bool:
+        """Send one 0→1→0 pulse for a V bridge, preserving fresh tracking values.
+
+        The three complete lines share the tracking socket lock. Failed pulses are
+        never queued or replayed on reconnect. The final zero rearms the Arduino.
+        """
+        if not self.enabled:
+            return False
+        sock = self._sock or self._connect()
+        if sock is None:
+            return False
+        try:
+            with self._lock:
+                state = (0, 0, 0, 0)
+                if self._last_tracking is not None:
+                    created, latest = self._last_tracking
+                    if time.monotonic() - created <= 1.5:
+                        state = latest
+                body, face, dx, dy = state
+                prefix = f"V,{body},{face},{dx},{dy},"
+                sock.sendall((prefix + "0\n" + prefix + "1\n" + prefix + "0\n").encode("ascii"))
             return True
         except OSError as exc:
             self.last_error = f"send: {exc}"

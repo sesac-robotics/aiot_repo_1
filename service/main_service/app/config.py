@@ -57,6 +57,10 @@ class Settings:
     # Bridge는 접속을 1개만 받으므로 서버가 하나의 연결로 둘 다 보낸다. PC4_HOST 또는 TRACK_PC4_HOST 중 아무거나.
     track_pc4_host: str = os.getenv("PC4_HOST") or os.getenv("TRACK_PC4_HOST", "")
     track_pc4_port: int = int(os.getenv("PC4_PORT") or os.getenv("TRACK_PC4_PORT", "8765"))
+    # door: DOOR,OPEN,id; v: V,body,face,dx,dy,doorPulse for the PC4 V bridge.
+    pc4_door_protocol: str = os.getenv("PC4_DOOR_PROTOCOL", "door").strip().lower()
+    # Demo display only; never substitutes for a PC4 acknowledgement in the DB.
+    gui_door_open_on_send: bool = os.getenv("GUI_DOOR_OPEN_ON_SEND", "false").lower() == "true"
     # PC2가 10칸 형식(T,T,얼굴4,몸4)으로 보낼 때 화면 크기를 모르므로 이 값을 쓴다
     track_frame_width: int = int(os.getenv("TRACK_FRAME_WIDTH", "640"))
     track_frame_height: int = int(os.getenv("TRACK_FRAME_HEIGHT", "480"))

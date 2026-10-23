@@ -152,7 +152,7 @@ class WorkflowMixin:
   w=self.windows['door_access'];w.doorState.setText(state);bg={'OPEN':'#21843d','CLOSED':'#bf4943','UNKNOWN':'#7b8882'}[state];w.doorState.setStyleSheet(f'background:{bg};color:white;border-radius:8px;font-size:44px;font-weight:700;')
   if record:self.record({'OPEN':'Door opened','CLOSED':'Door closed','UNKNOWN':'Door unknown'}[state],details='Door sensor',payload=payload)
  def recognize(self,e):
-  w=self.windows['door_access'];p=next((p for p in self.people if p['id']==e.get('person_id')),{});w.identityName.setText(e['name']);w.identityId.setText('ID  '+e.get('person_id','—'))
+  w=self.windows['door_access'];p=next((p for p in self.people if p['id']==e.get('person_id')),{});w.identityName.setText(e['name']);w.identityId.setText('ID  '+(e.get('person_id') or '—'))
   if hasattr(w,'identityRole'):w.identityRole.setText(e['role'])
   for key in ['sex','birth','blood','rh','height','weight','disease','medicine']:getattr(w,'value_'+key).setText(str(p.get(key,'—'))+(' cm' if key=='height' and key in p else ' kg' if key=='weight' and key in p else ''))
   text='Allowed' if e['allowed'] else 'Denied';w.accessStatus.setText(text);w.accessStatus.setStyleSheet('font-size:25px;font-weight:700;color:'+('#217449' if e['allowed'] else '#b63d36')+';');self.record('Access allowed' if e['allowed'] else 'Access denied',e['name'],e.get('person_id'),'Recognition result · '+e['role'],e)
@@ -178,6 +178,7 @@ class WorkflowMixin:
     if req is None:raise ValueError('Unknown or completed request_id')
     if req['type']!=('db_save' if typ=='db_result' else 'card_write'):raise ValueError('Result type does not match request')
     if typ=='card_write_result' and e.get('uid')!=req['uid']:raise ValueError('Card UID does not match pending write')
+    if typ=='db_result' and e['success'] and (not isinstance(e.get('person_id'),str) or not e['person_id'].strip()):e=dict(e,success=False,message='PC1 response is missing person_id')
     active=self.active_registration and self.active_registration['operation']==req['operation']
     if typ=='db_result':
      r={'operation':req['operation'],'person':dict(req['person']),'old_id':req.get('old_id'),'uid':self.active_registration.get('uid') if active else None,'db_saved':False,'card_queued':False}

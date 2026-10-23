@@ -1,6 +1,8 @@
 """DB 등록용 사진에서 InsightFace buffalo_l 얼굴 특징 벡터를 추출해 JSON으로 저장.
 
-입력: /app/data/db_registered/<patient_id>/*.jpg|png|jpeg|bmp|webp
+먼저 GUI/서버에서 사람을 등록하고 발급된 person_id(P0001/S0001/A0001 등)를
+사진 폴더 이름으로 사용한다. JSON의 patient_id는 그 서버 person_id와 같은 값이다.
+입력: /app/data/db_registered/<person_id>/*.jpg|png|jpeg|bmp|webp
 출력: /app/data/db_embeddings/<patient_id>.json
 
 실행: python3 face_db_export.py
@@ -38,9 +40,9 @@ def save_json_atomic(path, value):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='환자 등록 사진 -> 512차원 특징 벡터 JSON')
-    parser.add_argument('--input', type=Path, default=INPUT_DIR, help='환자별 등록 사진 폴더')
-    parser.add_argument('--output', type=Path, default=OUTPUT_DIR, help='환자별 JSON 저장 폴더')
+    parser = argparse.ArgumentParser(description='서버 person_id별 등록 사진 -> 512차원 특징 벡터 JSON')
+    parser.add_argument('--input', type=Path, default=INPUT_DIR, help='서버 person_id별 하위 폴더가 있는 등록 사진 경로')
+    parser.add_argument('--output', type=Path, default=OUTPUT_DIR, help='person_id별 JSON 저장 폴더')
     parser.add_argument('--overwrite', action='store_true', help='기존 JSON을 다시 추출해 갱신')
     args = parser.parse_args()
 

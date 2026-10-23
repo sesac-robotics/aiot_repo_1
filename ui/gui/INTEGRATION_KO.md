@@ -11,3 +11,5 @@ Current/run.py + workflow.py가 실행 코드입니다.
 
 Current는 문 제어 명령을 보내지 않습니다. 실제 센서 상태만 표시합니다.
 Future는 이전 디자인 데모로 유지했습니다.
+
+서버와 얼굴 인식 결과를 연결해 실행하려면 [PC1 연결 실행 안내](CONNECTED_PC1_KO.md)를 참고하세요.
