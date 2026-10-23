@@ -53,9 +53,29 @@ class Settings:
     # SR-06 추적 → PC4 CCTV MCU. PC4를 직접 연결하면 serial 대신 TCP를 설정한다.
     track_serial_port: str = os.getenv("TRACK_SERIAL_PORT", "")
     track_serial_baud: int = int(os.getenv("TRACK_SERIAL_BAUD", "115200"))
-    track_pc4_host: str = os.getenv("TRACK_PC4_HOST", "")
-    track_pc4_port: int = int(os.getenv("TRACK_PC4_PORT", "8765"))
+    # PC4 Bridge (device/cctv_tracking_servo/pc4_bridge.py). 추적(TRACK)과 문 열기(DOOR,OPEN)가 같은 연결을 쓴다.
+    # Bridge는 접속을 1개만 받으므로 서버가 하나의 연결로 둘 다 보낸다. PC4_HOST 또는 TRACK_PC4_HOST 중 아무거나.
+    track_pc4_host: str = os.getenv("PC4_HOST") or os.getenv("TRACK_PC4_HOST", "")
+    track_pc4_port: int = int(os.getenv("PC4_PORT") or os.getenv("TRACK_PC4_PORT", "8765"))
+    # PC2가 10칸 형식(T,T,얼굴4,몸4)으로 보낼 때 화면 크기를 모르므로 이 값을 쓴다
+    track_frame_width: int = int(os.getenv("TRACK_FRAME_WIDTH", "640"))
+    track_frame_height: int = int(os.getenv("TRACK_FRAME_HEIGHT", "480"))
     track_camera_id: str = os.getenv("TRACK_CAMERA_ID", "CAM01")
+
+    # SR-04 문 열기 명령 (서버 → PC4 → Arduino)
+    door_cmd_timeout_sec: float = float(os.getenv("DOOR_CMD_TIMEOUT_SEC", "5"))      # 명세 ⑥: 5초 내 ACK/EVENT 없으면 실패
+    door_open_cooldown_sec: float = float(os.getenv("DOOR_OPEN_COOLDOWN_SEC", "10"))  # 같은 사람 얼굴이 연달아 와도 1번만 열기
+
+    # 3-① PC3 실시간 프레임 (JPEG + 분석 JSON)
+    live_frame_max_bytes: int = int(os.getenv("LIVE_FRAME_MAX_BYTES", str(3 * 1024 * 1024)))
+
+    # 관리자 GUI 이벤트 수신기 (ui/gui/Current/event_bridge.py, HTTP 8765). 서버가 인식·문·낙상을 보낸다.
+    gui_event_enabled: bool = _bool("GUI_EVENT_ENABLED", True)
+    gui_event_url: str = os.getenv("GUI_EVENT_URL", "http://127.0.0.1:8765")
+    gui_event_token: str = os.getenv("GUI_EVENT_TOKEN", "")
+    # 토큰을 비워 두면 같은 PC의 GUI가 만든 토큰 파일을 읽는다
+    gui_event_token_file: str = os.getenv("GUI_EVENT_TOKEN_FILE", str(
+        Path(__file__).resolve().parents[3] / "ui" / "gui" / "Current" / "data" / "gui_event.token"))
 
     # PC2 → PC1 추적값 TCP 수신 (새 TRACK Bounding Box, 기존 T/T,N,N도 호환)
     pc2_tcp_enabled: bool = _bool("PC2_TCP_ENABLED", True)

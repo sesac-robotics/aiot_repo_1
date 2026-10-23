@@ -2,6 +2,7 @@
 # 버전을 하나로 고정하지 않고 범위로 둔다 → 팀원 PC에 이미 깔린 버전과 충돌하지 않게.
 # 낙상·얼굴 AI 가상환경과는 따로, 서버 전용 가상환경(.venv)에 설치하는 것을 권장.
 fastapi>=0.110
+python-multipart>=0.0.9
 uvicorn[standard]>=0.27
 psycopg[binary]>=3.1
 pgvector>=0.2.5

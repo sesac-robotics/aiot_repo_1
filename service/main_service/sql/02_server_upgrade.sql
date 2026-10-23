@@ -12,3 +12,14 @@ CREATE TABLE IF NOT EXISTS hcc.door_state_log (
     received_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_door_state_log_time ON hcc.door_state_log(door_id, received_at DESC);
+
+-- v2: 역할 (환자 Patient / 직원 Staff / 관리자 Admin). 관리자 GUI(ui/gui/Current)가 쓰는 역할을 그대로 저장
+ALTER TABLE hcc.persons DROP CONSTRAINT IF EXISTS persons_person_type_check;
+ALTER TABLE hcc.persons ADD CONSTRAINT persons_person_type_check
+    CHECK (person_type IN ('PATIENT', 'STAFF', 'VISITOR', 'ADMIN'));
+CREATE SEQUENCE IF NOT EXISTS hcc.staff_seq;     -- 직원 S0001, S0002 ...
+CREATE SEQUENCE IF NOT EXISTS hcc.admin_seq;     -- 관리자 A0001 ...
+
+-- v2: 문 열기 명령 번호. PC4로 "DOOR,OPEN,<request_id>"를 보내고 ACK/EVENT를 이 번호로 맞춘다 (명세 ⑥)
+CREATE SEQUENCE IF NOT EXISTS hcc.door_request_seq;
+ALTER TABLE hcc.door_commands ADD COLUMN IF NOT EXISTS request_id BIGINT UNIQUE;
