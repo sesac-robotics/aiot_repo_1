@@ -3,7 +3,7 @@
 import math
 import unittest
 
-from detect_yolo import TargetController, control_error
+from detect_yolo import TargetController, box_overlaps_center_circle, control_error
 
 
 FRAME = (640, 480)
@@ -23,6 +23,27 @@ class TrackingTests(unittest.TestCase):
         huge = control_error((0, 0, 640, 480), FRAME, face=True)
         self.assertTrue(huge[2])
         self.assertEqual(huge[:2], (0, 0))
+
+    def test_face_box_edge_uses_15_and_20_percent_hysteresis(self):
+        ctrl = TargetController()
+        # 中心点在蓝圈外，但左边框已进入 72px 蓝圈。
+        touches_blue = (390, 200, 470, 280)
+        self.assertTrue(box_overlaps_center_circle(touches_blue, FRAME, 0.15))
+        self.assertGreater(math.dist(((430, 240)), (320, 240)), 72)
+        for t in (1.0, 1.1, 1.2):
+            decision = ctrl.process([], [touches_blue], FRAME, t)
+        self.assertEqual((decision.state, decision.dx, decision.dy),
+                         ("FACE_LOCKED", 0, 0))
+
+        # 离开蓝圈但仍与 96px 红圈相交，继续保持停止。
+        between_circles = (400, 200, 480, 280)
+        decision = ctrl.process([], [between_circles], FRAME, 1.3)
+        self.assertEqual((decision.dx, decision.dy), (0, 0))
+
+        # 人脸框完全离开红圈后才重新输出追踪误差。
+        outside_red = (420, 200, 500, 280)
+        decision = ctrl.process([], [outside_red], FRAME, 1.4)
+        self.assertNotEqual((decision.dx, decision.dy), (0, 0))
 
     def test_body_center_then_scan_without_body(self):
         ctrl = TargetController()

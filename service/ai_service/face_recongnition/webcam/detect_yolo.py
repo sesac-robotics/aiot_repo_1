@@ -73,6 +73,16 @@ def match_box(boxes, previous, frame_size, allow_new):
     return min(scored, key=lambda item: item[0])[1] if scored else None
 
 
+def box_overlaps_center_circle(box, frame_size, radius_ratio):
+    """人脸框只要有任意部分进入中心圆，就视为与圆相交。"""
+    width, height = frame_size
+    circle_x, circle_y = width / 2.0, height / 2.0
+    nearest_x = max(box[0], min(circle_x, box[2]))
+    nearest_y = max(box[1], min(circle_y, box[3]))
+    radius = min(width, height) * radius_ratio
+    return math.hypot(nearest_x - circle_x, nearest_y - circle_y) <= radius
+
+
 def control_error(box, frame_size, face=False):
     """两个轴按同一短边缩放，Arduino 才能用欧氏距离表示圆形目标区。"""
     width, height = frame_size
@@ -132,8 +142,11 @@ class TargetController:
         self.centered_since = None
         self.lost_since = None
         self.scan_since = None
+        self.face_target_reached = False
 
     def _start_candidate(self, face):
+        if self.state not in ("FACE_LOST", "FACE_LOCKED"):
+            self.face_target_reached = False
         self.resume_state = self.state
         self.state = "FACE_CANDIDATE"
         self.candidate_box = face
@@ -178,6 +191,7 @@ class TargetController:
                 self.state = "SCANNING"
                 self.scan_since = now
                 self.face_box = None
+                self.face_target_reached = False
         elif self.state == "SCANNING":
             face = match_box(faces, None, frame_size, True)
             if face is not None and now >= self.candidate_retry_after:
@@ -210,6 +224,15 @@ class TargetController:
         fov_limited = False
         if self.state == "FACE_LOCKED" and face_seen:
             dx, dy, fov_limited = control_error(face, frame_size, face=True)
+            # 停止条件看整个人脸框，不再只看人脸中心点。
+            # 进入蓝色 15% 圆即停止；停止后完全离开红色 20% 圆才恢复。
+            if self.face_target_reached:
+                if not box_overlaps_center_circle(face, frame_size, CENTER_EXIT_RATIO):
+                    self.face_target_reached = False
+            elif box_overlaps_center_circle(face, frame_size, CENTER_ENTER_RATIO):
+                self.face_target_reached = True
+            if self.face_target_reached:
+                dx = dy = 0
         elif self.state in ("BODY_TRACKING", "SCANNING") and body is not None:
             # 扫描期间 Uno 忽略身体误差；回位后立刻有最新身体坐标可用。
             dx, dy, _ = control_error(body, frame_size)
@@ -454,7 +477,7 @@ def main():
             if decision.face_box:
                 cv2.rectangle(frame, decision.face_box[:2], decision.face_box[2:], (0, 255, 255), 2)
             cv2.circle(frame, (width // 2, height // 2), round(min(width, height) * CENTER_ENTER_RATIO), (255, 0, 0), 1)
-            cv2.circle(frame, (width // 2, height // 2), round(min(width, height) * CENTER_EXIT_RATIO), (180, 0, 180), 1)
+            cv2.circle(frame, (width // 2, height // 2), round(min(width, height) * CENTER_EXIT_RATIO), (0, 0, 255), 1)
             margin_x, margin_y = round(width * EDGE_MARGIN_RATIO), round(height * EDGE_MARGIN_RATIO)
             cv2.rectangle(frame, (margin_x, margin_y),
                           (width - margin_x, height - margin_y), (80, 80, 80), 1)
