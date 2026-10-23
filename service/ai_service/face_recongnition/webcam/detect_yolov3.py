@@ -8,8 +8,10 @@ PC2에서 추적·촬영하고 좌표는 PC1으로 TCP 전송한다. MCU 연결�
 import argparse
 import math
 import os
+import socket
 import time
 from coordinate_sender import CoordinateSender
+from camera_stream import recv_frame
 from datetime import datetime
 from pathlib import Path
 
@@ -225,7 +227,11 @@ def read_tcp_settings():
 def main():
     tcp_settings = read_tcp_settings()
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--camera", type=int, default=0, help="V4L2 camera index")
+    parser.add_argument("--camera", type=int, default=0, help="local camera index")
+    parser.add_argument("--frame-listen-host", default="0.0.0.0",
+                        help="PC2 address for the PC4 camera stream")
+    parser.add_argument("--frame-listen-port", type=int,
+                        help="receive JPEG frames from PC4 instead of opening a local camera")
     parser.add_argument("--model", type=Path, default=MODEL_PATH, help="YOLO model path")
     parser.add_argument("--out", type=Path, default=CAPTURE_DIR, help="캡처 저장 폴더")
     parser.add_argument("--no-eye-check", dest="eye_check", action="store_false",
@@ -271,11 +277,23 @@ def main():
         )
         if eye_detector.empty():
             raise RuntimeError("Cannot load OpenCV eye detector")
-    cap = cv2.VideoCapture(args.camera, cv2.CAP_V4L2)
-    if not cap.isOpened():
-        raise RuntimeError(f"Cannot open camera {args.camera}")
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    cap = None
+    listener = None
+    frame_sock = None
+    if args.frame_listen_port is None:
+        cap = cv2.VideoCapture(args.camera)
+        if not cap.isOpened():
+            raise RuntimeError(f"Cannot open camera {args.camera}")
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    else:
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind((args.frame_listen_host, args.frame_listen_port))
+        listener.listen(1)
+        print(f"[CAMERA] waiting for PC4 on {args.frame_listen_host}:{args.frame_listen_port}", flush=True)
+        frame_sock, address = listener.accept()
+        print(f"[CAMERA] PC4 connected: {address}", flush=True)
 
     last_send = 0.0
     capture_state = new_capture_state()
@@ -298,10 +316,13 @@ def main():
         while True:
             now = time.monotonic()
 
-            ok, frame = cap.read()
-            if not ok:
-                print("Camera frame unavailable")
-                break
+            if frame_sock is not None:
+                frame = recv_frame(frame_sock)
+            else:
+                ok, frame = cap.read()
+                if not ok:
+                    print("Camera frame unavailable")
+                    break
             raw = frame.copy()  # 촬영용 원본 (화면 표시용 그림이 들어가지 않게)
 
             height, width = frame.shape[:2]
@@ -321,7 +342,8 @@ def main():
             person = choose_person(people, screen_center)
             face_box = None
             if person is None:
-                pc1_message = "N,N\n"  # PC1용: 사람 없음, 얼굴 없음
+                # 새 Main Server 协议：无目标时四个框坐标统一为 -1。
+                pc1_message = f"TRACK,0,0,-1,-1,-1,-1,{width},{height}\n"
                 cv2.putText(frame, "No person detected", (10, 30),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
             else:
@@ -329,18 +351,20 @@ def main():
                 face = find_face(frame, person, face_detector)
                 if face is None:
                     target_cx, target_cy = body_cx, body_cy
+                    track_box = (x1, y1, x2, y2)
                     tracking_mode = "BODY"
                 else:
                     face_box, (target_cx, target_cy) = face
+                    track_box = face_box
                     tracking_mode = "FACE"
                     cv2.rectangle(frame, face_box[:2], face_box[2:], (255, 255, 0), 2)
 
                 dx, dy = target_cx - screen_center[0], target_cy - screen_center[1]
 
-                # PC1에는 얼굴 감지 여부 추가
-                face_flag = "T" if face is not None else "N"
+                # PC1 发送完整画面中的 Bounding Box；中心点只用于本地显示和截图。
                 pc1_message = (
-                    f"T,{face_flag},{target_cx},{target_cy},{dx},{dy}\n"
+                    f"TRACK,1,{int(face is not None)},{track_box[0]},{track_box[1]},"
+                    f"{track_box[2]},{track_box[3]},{width},{height}\n"
                 )
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                 cv2.circle(frame, (target_cx, target_cy), 5, (0, 0, 255), -1)
@@ -385,7 +409,12 @@ def main():
             if coordinate_sender is not None:
                 coordinate_sender.close()
         finally:
-            cap.release()
+            if frame_sock is not None:
+                frame_sock.close()
+            if listener is not None:
+                listener.close()
+            if cap is not None:
+                cap.release()
             cv2.destroyAllWindows()
 
 if __name__ == "__main__":

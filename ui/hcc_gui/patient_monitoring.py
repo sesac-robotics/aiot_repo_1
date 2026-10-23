@@ -86,6 +86,8 @@ class WindowClass(QMainWindow, from_class) :
 
         # 4. UI 위젯 이벤트 연결
         self.serverButton.clicked.connect(self.connect_to_server)                     # 서버 연결 버튼
+        self.serverdisconButton.clicked.connect(self.disconnect_from_server)         # 🔌 서버 연결해제 버튼 연결
+        self.serverdisconButton.setEnabled(False)        
         self.opendoorButton.clicked.connect(lambda: self.send_command("DOOR_OPEN"))   # 문 열기 버튼
         self.closedoorButton.clicked.connect(lambda: self.send_command("DOOR_CLOSE")) # 문 닫기 버튼
         
@@ -106,6 +108,7 @@ class WindowClass(QMainWindow, from_class) :
         self.refresh_timer.setInterval(500) # 500ms = 0.5초
         self.refresh_timer.timeout.connect(self.load_enroll_list_from_db)
         self.refresh_timer.start()
+        
 
 
     def init_table_widget(self):
@@ -357,11 +360,35 @@ class WindowClass(QMainWindow, from_class) :
         else:
             self.socket.disconnectFromHost()
 
+    def disconnect_from_server(self):
+        if self.socket.state() == QAbstractSocket.SocketState.ConnectedState:
+            self.serverdisconButton.setText("Disconnecting...")
+            self.serverdisconButton.setEnabled(False)
+            self.socket.disconnectFromHost()
+        else:
+            QMessageBox.warning(self, "Fail", "Not currently connected to the server.")
+
+
     def on_connected(self):
         self.serverButton.setText("Disconnect\nServer")
         self.serverButton.setEnabled(True)
         QMessageBox.information(self, "연결 성공", "모니터링 서버에 연결되었습니다.")
 
+
+    def on_disconnected(self):
+        self.serverButton.setText("Server\nConnect")
+        self.serverButton.setEnabled(True)            # 다시 연결할 수 있도록 연결 버튼 활성화
+        self.serverdisconButton.setText("Server\nDisconnect")
+        self.serverdisconButton.setEnabled(False)     # 해제 버튼 비활성화
+        QMessageBox.warning(self, "Disconnected", "Connection to the server has been closed.")
+    
+    def on_error(self, socket_error):
+        self.serverButton.setText("Server\nConnect")
+        self.serverButton.setEnabled(True)
+        self.serverdisconButton.setText("Server\nDisconnect")
+        self.serverdisconButton.setEnabled(False)
+        QMessageBox.critical(self, "Error", f"Socket error occurred: {self.socket.errorString()}")
+    
     def on_ready_read(self):
         while self.socket.bytesAvailable() > 0:
             data = self.socket.readAll().data()

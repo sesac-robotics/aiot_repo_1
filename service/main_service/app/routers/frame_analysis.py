@@ -13,6 +13,7 @@ from fastapi.responses import Response
 from pydantic import ValidationError
 
 from .. import auth
+from ..db import get_conn
 from ..events import publish
 from ..schemas import FallEvent, FrameAnalysis
 from ..services.frame_analysis import store
@@ -44,6 +45,17 @@ def _store_fall_events(frame: FrameAnalysis) -> list[dict]:
     return stored
 
 
+def _ensure_camera(frame: FrameAnalysis) -> None:
+    """낙상 기록(fall_events)은 등록된 카메라가 필요하다. AI 설정의 CAMERA_ID(camera_1)를 미리 등록하지
+    않아도 되도록 첫 프레임에서 자동 등록한다(위치는 CAMERA_LOCATION)."""
+    with get_conn() as conn:
+        conn.execute("""INSERT INTO hcc.cameras (camera_id, camera_type, location, last_seen_at)
+                        VALUES (%s, 'CCTV', %s, NOW())
+                        ON CONFLICT (camera_id) DO UPDATE
+                          SET last_seen_at = NOW(), location = COALESCE(hcc.cameras.location, EXCLUDED.location)""",
+                     (frame.camera.camera_id, frame.camera.location))
+
+
 @router.post("/api/v1/live/frame", status_code=201, dependencies=[Depends(auth.device)])
 async def receive_frame_analysis(
     metadata: str = Form(...),
@@ -60,6 +72,7 @@ async def receive_frame_analysis(
     except (json.JSONDecodeError, ValidationError) as exc:
         raise HTTPException(422, "metadata JSON 형식이 올바르지 않습니다") from exc
 
+    _ensure_camera(frame)              # (서버 담당 추가) 처음 보는 카메라는 자동 등록 → 낙상 저장 시 409 방지
     saved_events = _store_fall_events(frame)
     snapshot = store.put(frame.camera.camera_id, frame.model_dump(mode="json"), jpeg)
     # JPEG는 WebSocket으로 보내지 않는다. GUI는 image endpoint에서 필요할 때 가져간다.

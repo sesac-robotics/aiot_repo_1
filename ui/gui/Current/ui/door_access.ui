@@ -1,0 +1,819 @@
+<?xml version='1.0' encoding='utf-8'?>
+<ui version="4.0">
+  <class>Form</class>
+  <widget class="QWidget" name="Form">
+    <property name="geometry">
+      <rect>
+        <x>0</x>
+        <y>0</y>
+        <width>1280</width>
+        <height>800</height>
+      </rect>
+    </property>
+    <property name="windowTitle">
+      <string>T-SAFE | Door Access | Current</string>
+    </property>
+    <widget class="QFrame" name="header">
+      <property name="geometry">
+        <rect>
+          <x>0</x>
+          <y>0</y>
+          <width>1280</width>
+          <height>48</height>
+        </rect>
+      </property>
+      <property name="role" stdset="0">
+        <string>card</string>
+      </property>
+      <property name="styleSheet">
+        <string>QFrame#header {background:#105448;border:0;border-radius:0;} QLabel {color:white;}</string>
+      </property>
+      <widget class="QLabel" name="brand">
+        <property name="geometry">
+          <rect>
+            <x>24</x>
+            <y>8</y>
+            <width>650</width>
+            <height>32</height>
+          </rect>
+        </property>
+        <property name="text">
+          <string>✚  T-SAFE | Door Access</string>
+        </property>
+        <property name="styleSheet">
+          <string>font-size:20px;color:white;font-weight:600;</string>
+        </property>
+      </widget>
+      <widget class="QLabel" name="version">
+        <property name="geometry">
+          <rect>
+            <x>1125</x>
+            <y>8</y>
+            <width>130</width>
+            <height>32</height>
+          </rect>
+        </property>
+        <property name="text">
+          <string>Current</string>
+        </property>
+      </widget>
+    </widget>
+    <widget class="QPushButton" name="homeButton">
+      <property name="text">
+        <string>‹ Home</string>
+      </property>
+      <property name="geometry">
+        <rect>
+          <x>48</x>
+          <y>72</y>
+          <width>142</width>
+          <height>44</height>
+        </rect>
+      </property>
+      <property name="styleSheet">
+        <string>font-size:21px;border:0;background:transparent;</string>
+      </property>
+    </widget>
+    <widget class="QLabel" name="modeLabel">
+      <property name="geometry">
+        <rect>
+          <x>56</x>
+          <y>121</y>
+          <width>200</width>
+          <height>30</height>
+        </rect>
+      </property>
+      <property name="text">
+        <string>Current</string>
+      </property>
+      <property name="styleSheet">
+        <string>font-size:20px;color:#61728b;background:transparent;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+    </widget>
+    <widget class="QLabel" name="identityName">
+      <property name="geometry">
+        <rect>
+          <x>56</x>
+          <y>176</y>
+          <width>580</width>
+          <height>78</height>
+        </rect>
+      </property>
+      <property name="styleSheet">
+        <string>font-size:60px;color:#105448;background:transparent;font-weight:700;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+      <property name="text">
+        <string>Waiting</string>
+      </property>
+    </widget>
+    <widget class="QLabel" name="identityId">
+      <property name="geometry">
+        <rect>
+          <x>56</x>
+          <y>257</y>
+          <width>520</width>
+          <height>45</height>
+        </rect>
+      </property>
+      <property name="styleSheet">
+        <string>font-size:30px;color:#172b4d;background:transparent;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+      <property name="text">
+        <string>ID  —</string>
+      </property>
+    </widget>
+    <widget class="QLabel" name="identityRole">
+      <property name="geometry">
+        <rect>
+          <x>56</x>
+          <y>314</y>
+          <width>155</width>
+          <height>46</height>
+        </rect>
+      </property>
+      <property name="styleSheet">
+        <string>font-size:26px;color:#105448;background:transparent;background:#e0f0e0;border-radius:9px;padding-left:25px;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+      <property name="text">
+        <string>—</string>
+      </property>
+    </widget>
+    <widget class="QLabel" name="topVertical">
+      <property name="geometry">
+        <rect>
+          <x>640</x>
+          <y>182</y>
+          <width>1</width>
+          <height>178</height>
+        </rect>
+      </property>
+      <property name="text">
+        <string />
+      </property>
+      <property name="styleSheet">
+        <string>font-size:24px;color:#172b4d;background:transparent;background:#cddbd3;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+    </widget>
+    <widget class="QLabel" name="doorIcon">
+      <property name="geometry">
+        <rect>
+          <x>700</x>
+          <y>192</y>
+          <width>116</width>
+          <height>154</height>
+        </rect>
+      </property>
+      <property name="text">
+        <string />
+      </property>
+      <property name="styleSheet">
+        <string>font-size:24px;color:#172b4d;background:transparent;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+      <property name="pixmap">
+        <pixmap>../assets/door.svg</pixmap>
+      </property>
+      <property name="scaledContents">
+        <bool>true</bool>
+      </property>
+    </widget>
+    <widget class="QLabel" name="doorLabel">
+      <property name="geometry">
+        <rect>
+          <x>844</x>
+          <y>186</y>
+          <width>330</width>
+          <height>42</height>
+        </rect>
+      </property>
+      <property name="text">
+        <string>Door</string>
+      </property>
+      <property name="styleSheet">
+        <string>font-size:26px;color:#172b4d;background:transparent;font-weight:600;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+    </widget>
+    <widget class="QLabel" name="doorState">
+      <property name="geometry">
+        <rect>
+          <x>844</x>
+          <y>238</y>
+          <width>380</width>
+          <height>90</height>
+        </rect>
+      </property>
+      <property name="styleSheet">
+        <string>background:#7b8882;color:white;border-radius:8px;font-size:44px;font-weight:700;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+      <property name="alignment">
+        <set>Qt::AlignCenter</set>
+      </property>
+      <property name="text">
+        <string>UNKNOWN</string>
+      </property>
+    </widget>
+    <widget class="QLabel" name="topDivider">
+      <property name="geometry">
+        <rect>
+          <x>56</x>
+          <y>398</y>
+          <width>1168</width>
+          <height>1</height>
+        </rect>
+      </property>
+      <property name="text">
+        <string />
+      </property>
+      <property name="styleSheet">
+        <string>font-size:24px;color:#172b4d;background:transparent;background:#cddbd3;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+    </widget>
+    <widget class="QLabel" name="personalTitle">
+      <property name="geometry">
+        <rect>
+          <x>56</x>
+          <y>438</y>
+          <width>560</width>
+          <height>48</height>
+        </rect>
+      </property>
+      <property name="text">
+        <string>●  Personal</string>
+      </property>
+      <property name="styleSheet">
+        <string>font-size:32px;color:#172b4d;background:transparent;font-weight:700;background:#eaf3ec;border:1px solid #d4e2db;border-radius:5px;padding-left:12px;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+    </widget>
+    <widget class="QLabel" name="healthTitle">
+      <property name="geometry">
+        <rect>
+          <x>690</x>
+          <y>438</y>
+          <width>540</width>
+          <height>48</height>
+        </rect>
+      </property>
+      <property name="text">
+        <string>✚  Health</string>
+      </property>
+      <property name="styleSheet">
+        <string>font-size:32px;color:#172b4d;background:transparent;font-weight:700;background:#eaf3ec;border:1px solid #d4e2db;border-radius:5px;padding-left:12px;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+    </widget>
+    <widget class="QLabel" name="bottomVertical">
+      <property name="geometry">
+        <rect>
+          <x>640</x>
+          <y>438</y>
+          <width>1</width>
+          <height>320</height>
+        </rect>
+      </property>
+      <property name="text">
+        <string />
+      </property>
+      <property name="styleSheet">
+        <string>font-size:24px;color:#172b4d;background:transparent;background:#cddbd3;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+    </widget>
+    <widget class="QLabel" name="key_sex">
+      <property name="geometry">
+        <rect>
+          <x>56</x>
+          <y>514</y>
+          <width>245</width>
+          <height>40</height>
+        </rect>
+      </property>
+      <property name="text">
+        <string>Sex</string>
+      </property>
+      <property name="styleSheet">
+        <string>font-size:25px;color:#61728b;background:transparent;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+    </widget>
+    <widget class="QLabel" name="value_sex">
+      <property name="geometry">
+        <rect>
+          <x>360</x>
+          <y>514</y>
+          <width>270</width>
+          <height>40</height>
+        </rect>
+      </property>
+      <property name="styleSheet">
+        <string>font-size:25px;color:#172b4d;background:transparent;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+      <property name="text">
+        <string>—</string>
+      </property>
+    </widget>
+    <widget class="QLabel" name="rule_sex">
+      <property name="geometry">
+        <rect>
+          <x>56</x>
+          <y>559</y>
+          <width>548</width>
+          <height>1</height>
+        </rect>
+      </property>
+      <property name="text">
+        <string />
+      </property>
+      <property name="styleSheet">
+        <string>font-size:24px;color:#172b4d;background:transparent;background:#cddbd3;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+    </widget>
+    <widget class="QLabel" name="key_birth">
+      <property name="geometry">
+        <rect>
+          <x>56</x>
+          <y>574</y>
+          <width>245</width>
+          <height>40</height>
+        </rect>
+      </property>
+      <property name="text">
+        <string>Birth</string>
+      </property>
+      <property name="styleSheet">
+        <string>font-size:25px;color:#61728b;background:transparent;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+    </widget>
+    <widget class="QLabel" name="value_birth">
+      <property name="geometry">
+        <rect>
+          <x>360</x>
+          <y>574</y>
+          <width>270</width>
+          <height>40</height>
+        </rect>
+      </property>
+      <property name="styleSheet">
+        <string>font-size:25px;color:#172b4d;background:transparent;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+      <property name="text">
+        <string>—</string>
+      </property>
+    </widget>
+    <widget class="QLabel" name="rule_birth">
+      <property name="geometry">
+        <rect>
+          <x>56</x>
+          <y>619</y>
+          <width>548</width>
+          <height>1</height>
+        </rect>
+      </property>
+      <property name="text">
+        <string />
+      </property>
+      <property name="styleSheet">
+        <string>font-size:24px;color:#172b4d;background:transparent;background:#cddbd3;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+    </widget>
+    <widget class="QLabel" name="key_blood">
+      <property name="geometry">
+        <rect>
+          <x>56</x>
+          <y>634</y>
+          <width>245</width>
+          <height>40</height>
+        </rect>
+      </property>
+      <property name="text">
+        <string>Blood</string>
+      </property>
+      <property name="styleSheet">
+        <string>font-size:25px;color:#61728b;background:transparent;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+    </widget>
+    <widget class="QLabel" name="value_blood">
+      <property name="geometry">
+        <rect>
+          <x>360</x>
+          <y>634</y>
+          <width>270</width>
+          <height>40</height>
+        </rect>
+      </property>
+      <property name="styleSheet">
+        <string>font-size:25px;color:#172b4d;background:transparent;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+      <property name="text">
+        <string>—</string>
+      </property>
+    </widget>
+    <widget class="QLabel" name="rule_blood">
+      <property name="geometry">
+        <rect>
+          <x>56</x>
+          <y>679</y>
+          <width>548</width>
+          <height>1</height>
+        </rect>
+      </property>
+      <property name="text">
+        <string />
+      </property>
+      <property name="styleSheet">
+        <string>font-size:24px;color:#172b4d;background:transparent;background:#cddbd3;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+    </widget>
+    <widget class="QLabel" name="key_rh">
+      <property name="geometry">
+        <rect>
+          <x>56</x>
+          <y>694</y>
+          <width>245</width>
+          <height>40</height>
+        </rect>
+      </property>
+      <property name="text">
+        <string>Rh</string>
+      </property>
+      <property name="styleSheet">
+        <string>font-size:25px;color:#61728b;background:transparent;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+    </widget>
+    <widget class="QLabel" name="value_rh">
+      <property name="geometry">
+        <rect>
+          <x>360</x>
+          <y>694</y>
+          <width>270</width>
+          <height>40</height>
+        </rect>
+      </property>
+      <property name="styleSheet">
+        <string>font-size:25px;color:#172b4d;background:transparent;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+      <property name="text">
+        <string>—</string>
+      </property>
+    </widget>
+    <widget class="QLabel" name="rule_rh">
+      <property name="geometry">
+        <rect>
+          <x>56</x>
+          <y>739</y>
+          <width>548</width>
+          <height>1</height>
+        </rect>
+      </property>
+      <property name="text">
+        <string />
+      </property>
+      <property name="styleSheet">
+        <string>font-size:24px;color:#172b4d;background:transparent;background:#cddbd3;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+    </widget>
+    <widget class="QLabel" name="key_height">
+      <property name="geometry">
+        <rect>
+          <x>690</x>
+          <y>514</y>
+          <width>245</width>
+          <height>40</height>
+        </rect>
+      </property>
+      <property name="text">
+        <string>Height</string>
+      </property>
+      <property name="styleSheet">
+        <string>font-size:25px;color:#61728b;background:transparent;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+    </widget>
+    <widget class="QLabel" name="value_height">
+      <property name="geometry">
+        <rect>
+          <x>963</x>
+          <y>514</y>
+          <width>270</width>
+          <height>40</height>
+        </rect>
+      </property>
+      <property name="styleSheet">
+        <string>font-size:25px;color:#172b4d;background:transparent;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+      <property name="text">
+        <string>—</string>
+      </property>
+    </widget>
+    <widget class="QLabel" name="rule_height">
+      <property name="geometry">
+        <rect>
+          <x>690</x>
+          <y>559</y>
+          <width>534</width>
+          <height>1</height>
+        </rect>
+      </property>
+      <property name="text">
+        <string />
+      </property>
+      <property name="styleSheet">
+        <string>font-size:24px;color:#172b4d;background:transparent;background:#cddbd3;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+    </widget>
+    <widget class="QLabel" name="key_weight">
+      <property name="geometry">
+        <rect>
+          <x>690</x>
+          <y>574</y>
+          <width>245</width>
+          <height>40</height>
+        </rect>
+      </property>
+      <property name="text">
+        <string>Weight</string>
+      </property>
+      <property name="styleSheet">
+        <string>font-size:25px;color:#61728b;background:transparent;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+    </widget>
+    <widget class="QLabel" name="value_weight">
+      <property name="geometry">
+        <rect>
+          <x>963</x>
+          <y>574</y>
+          <width>270</width>
+          <height>40</height>
+        </rect>
+      </property>
+      <property name="styleSheet">
+        <string>font-size:25px;color:#172b4d;background:transparent;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+      <property name="text">
+        <string>—</string>
+      </property>
+    </widget>
+    <widget class="QLabel" name="rule_weight">
+      <property name="geometry">
+        <rect>
+          <x>690</x>
+          <y>619</y>
+          <width>534</width>
+          <height>1</height>
+        </rect>
+      </property>
+      <property name="text">
+        <string />
+      </property>
+      <property name="styleSheet">
+        <string>font-size:24px;color:#172b4d;background:transparent;background:#cddbd3;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+    </widget>
+    <widget class="QLabel" name="key_disease">
+      <property name="geometry">
+        <rect>
+          <x>690</x>
+          <y>634</y>
+          <width>245</width>
+          <height>40</height>
+        </rect>
+      </property>
+      <property name="text">
+        <string>Disease</string>
+      </property>
+      <property name="styleSheet">
+        <string>font-size:25px;color:#61728b;background:transparent;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+    </widget>
+    <widget class="QLabel" name="value_disease">
+      <property name="geometry">
+        <rect>
+          <x>963</x>
+          <y>634</y>
+          <width>270</width>
+          <height>40</height>
+        </rect>
+      </property>
+      <property name="styleSheet">
+        <string>font-size:25px;color:#172b4d;background:transparent;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+      <property name="text">
+        <string>—</string>
+      </property>
+    </widget>
+    <widget class="QLabel" name="rule_disease">
+      <property name="geometry">
+        <rect>
+          <x>690</x>
+          <y>679</y>
+          <width>534</width>
+          <height>1</height>
+        </rect>
+      </property>
+      <property name="text">
+        <string />
+      </property>
+      <property name="styleSheet">
+        <string>font-size:24px;color:#172b4d;background:transparent;background:#cddbd3;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+    </widget>
+    <widget class="QLabel" name="key_medicine">
+      <property name="geometry">
+        <rect>
+          <x>690</x>
+          <y>694</y>
+          <width>245</width>
+          <height>40</height>
+        </rect>
+      </property>
+      <property name="text">
+        <string>Medicine</string>
+      </property>
+      <property name="styleSheet">
+        <string>font-size:25px;color:#61728b;background:transparent;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+    </widget>
+    <widget class="QLabel" name="value_medicine">
+      <property name="geometry">
+        <rect>
+          <x>963</x>
+          <y>694</y>
+          <width>270</width>
+          <height>40</height>
+        </rect>
+      </property>
+      <property name="styleSheet">
+        <string>font-size:25px;color:#172b4d;background:transparent;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+      <property name="text">
+        <string>—</string>
+      </property>
+    </widget>
+    <widget class="QLabel" name="rule_medicine">
+      <property name="geometry">
+        <rect>
+          <x>690</x>
+          <y>739</y>
+          <width>534</width>
+          <height>1</height>
+        </rect>
+      </property>
+      <property name="text">
+        <string />
+      </property>
+      <property name="styleSheet">
+        <string>font-size:24px;color:#172b4d;background:transparent;background:#cddbd3;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+    </widget>
+    <property name="styleSheet">
+      <string>QWidget { font-family: "Malgun Gothic", "Noto Sans", "DejaVu Sans"; font-size: 17px; color:#17283a; background:#fbfcfa; }
+QLabel { background:transparent; }
+QFrame[role="card"] {background:#ffffff;border:1px solid #dbe2dc;border-radius:6px;}
+QLabel[role="title"] {font-size:32px;font-weight:700;color:#105448;}
+QLabel[role="section"] {font-size:24px;font-weight:600;color:#105448;}
+QLabel[role="muted"] {color:#77847f;font-size:15px;}
+QPushButton {background:white;border:1px solid #bccdc5;border-radius:7px;padding:9px 18px;color:#105448;font-weight:600;}
+QPushButton:hover {background:#e7f1eb;border-color:#105448;}
+QPushButton[role="primary"] {background:#105448;color:white;border:0;}
+QPushButton[role="danger"] {background:#fff4f3;color:#bf4741;border:1px solid #dcb3ae;}
+QPushButton[role="tile"] {background:rgba(255,255,255,242);border:1px solid #b1c5bb;border-left:16px solid #105448;border-radius:6px;text-align:left;padding-left:36px;font-size:27px;color:#13223c;}
+QLineEdit,QComboBox,QDateEdit,QTextEdit {background:white;border:1px solid #d4ddd7;border-radius:6px;padding:9px;selection-background-color:#105448;}
+QTableWidget {background:white;alternate-background-color:#f7f9f6;border:0;selection-background-color:#e0eee6;selection-color:#105448;gridline-color:#e4e9e4;}
+QHeaderView::section {background:#edf2ed;border:0;border-bottom:1px solid #dbe2dc;padding:12px;text-align:left;color:#64766a;font-weight:600;}
+QTableWidget::item {padding:12px;border-bottom:1px solid #edf1ec;}
+QLabel[role="open"] {background:#e1f0e6;color:#20734f;border-radius:10px;font-size:32px;font-weight:700;padding:16px;}
+QLabel[role="closed"] {background:#f8e4e1;color:#b7443e;border-radius:10px;font-size:32px;font-weight:700;padding:16px;}
+QLabel[role="alert"] {background:#fff0ee;color:#bd4840;border-radius:6px;padding:20px;font-size:21px;font-weight:600;}
+
+QLineEdit,QComboBox,QDateEdit,QTextEdit {border:1px solid #cbd5df;border-radius:4px;padding:8px 12px;font-size:17px;min-height:0px;}
+QHeaderView::section {background:#f2f5f1;color:#162b43;font-size:18px;border-right:1px solid #d4dce0;padding:12px;}
+QTableWidget {font-size:18px;selection-background-color:#d8eae2;alternate-background-color:white;border:1px solid #d4dce0;}
+QTableWidget::item {padding:10px;border-bottom:1px solid #d4dce0;border-right:1px solid #d4dce0;}
+QPushButton {font-size:18px;}
+</string>
+    </property>
+    <widget class="QLabel" name="accessStatus">
+      <property name="geometry">
+        <rect>
+          <x>56</x>
+          <y>364</y>
+          <width>566</width>
+          <height>32</height>
+        </rect>
+      </property>
+      <property name="text">
+        <string>Waiting for recognition</string>
+      </property>
+      <property name="styleSheet">
+        <string>font-size:25px;font-weight:600;color:#60786c;</string>
+      </property>
+      <property name="wordWrap">
+        <bool>true</bool>
+      </property>
+    </widget>
+  </widget>
+  <resources />
+  <connections />
+</ui>
