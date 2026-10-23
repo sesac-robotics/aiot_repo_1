@@ -19,6 +19,7 @@ class FallState(str, Enum):
     NORMAL = "normal"
     POSSIBLE_FALL = "possible_fall"
     FALL_CONFIRMED = "fall_confirmed"
+    LYING_AFTER_FALL = "lying_after_fall"
     RECOVERED = "recovered"
 
 
@@ -86,6 +87,8 @@ class _TrackMemory:
     peak_fall_probability: float | None = None
     upright_frames: int = 0
     saw_upright_posture: bool = False
+    lying_frames: int = 0
+    upright_recovery_frames: int = 0
 
 
 def extract_features(keypoints_xy: np.ndarray) -> list[float]:
@@ -129,6 +132,10 @@ class PerTrackFallEngine:
         latch_fall: bool = True,
         upright_consecutive: int = 5,
         require_upright_transition: bool = True,
+        lying_consecutive: int = 5,
+        lying_geometry_threshold: float = 0.6,
+        lying_aspect_ratio_threshold: float = 1.1,
+        upright_recover_consecutive: int = 60,
     ) -> None:
         if window_size <= 0 or max_track_gap < 0:
             raise ValueError("window_size must be positive and max_track_gap must be non-negative")
@@ -136,8 +143,13 @@ class PerTrackFallEngine:
             raise ValueError("thresholds must be probabilities in [0, 1]")
         if not 0 <= min_keypoint_confidence <= 1:
             raise ValueError("min_keypoint_confidence must be in [0, 1]")
-        if min(possible_consecutive, confirm_consecutive, recover_consecutive, upright_consecutive) <= 0:
+        if min(
+            possible_consecutive, confirm_consecutive, recover_consecutive,
+            upright_consecutive, lying_consecutive, upright_recover_consecutive,
+        ) <= 0:
             raise ValueError("state transition frame counts must be positive")
+        if not 0 <= lying_geometry_threshold <= 1 or lying_aspect_ratio_threshold <= 0:
+            raise ValueError("lying thresholds must be positive probabilities/aspect ratios")
         self.predictor = predictor
         self.window_size = window_size
         self.max_track_gap = max_track_gap
@@ -150,6 +162,10 @@ class PerTrackFallEngine:
         self.latch_fall = latch_fall
         self.upright_consecutive = upright_consecutive
         self.require_upright_transition = require_upright_transition
+        self.lying_consecutive = lying_consecutive
+        self.lying_geometry_threshold = lying_geometry_threshold
+        self.lying_aspect_ratio_threshold = lying_aspect_ratio_threshold
+        self.upright_recover_consecutive = upright_recover_consecutive
         self._tracks: dict[int, _TrackMemory] = {}
 
     @staticmethod
@@ -169,6 +185,17 @@ class PerTrackFallEngine:
         angle = extract_features(observation.keypoints_xy)[0]
         return abs(float(np.sin(np.radians(angle)))) >= 0.7
 
+    def is_lying(self, observation: PoseObservation, geometry: float) -> bool:
+        """Return whether a confirmed-fall track is visibly in a prone posture."""
+
+        x1, y1, x2, y2 = observation.bbox_xyxy
+        width, height = max(0.0, x2 - x1), max(0.0, y2 - y1)
+        aspect_ratio = width / max(height, 1e-6)
+        return (
+            geometry >= self.lying_geometry_threshold
+            and aspect_ratio >= self.lying_aspect_ratio_threshold
+        )
+
     def _purge_stale(self, frame_id: int) -> None:
         stale = [
             track_id
@@ -178,9 +205,43 @@ class PerTrackFallEngine:
         for track_id in stale:
             del self._tracks[track_id]
 
-    def _transition(self, memory: _TrackMemory, evidence: bool) -> FallState:
+    def _transition(
+        self,
+        memory: _TrackMemory,
+        evidence: bool,
+        *,
+        lying: bool,
+        upright: bool,
+    ) -> FallState:
         if self.latch_fall and memory.fall_latched:
             memory.state = FallState.FALL_CONFIRMED
+            return memory.state
+        if memory.state is FallState.LYING_AFTER_FALL:
+            if upright:
+                memory.upright_recovery_frames += 1
+                if memory.upright_recovery_frames >= self.upright_recover_consecutive:
+                    memory.state = FallState.RECOVERED
+                    memory.lying_frames = 0
+            else:
+                memory.upright_recovery_frames = 0
+            return memory.state
+        if memory.state is FallState.FALL_CONFIRMED:
+            # The incident is already confirmed.  Classify its aftermath from
+            # pose persistence, not from a model trained to spot the falling
+            # motion itself.
+            if lying:
+                memory.lying_frames += 1
+                memory.upright_recovery_frames = 0
+                if memory.lying_frames >= self.lying_consecutive:
+                    memory.state = FallState.LYING_AFTER_FALL
+                return memory.state
+            memory.lying_frames = 0
+            if upright:
+                memory.upright_recovery_frames += 1
+            else:
+                memory.upright_recovery_frames = 0
+            if memory.upright_recovery_frames >= self.upright_recover_consecutive:
+                memory.state = FallState.RECOVERED
             return memory.state
         if evidence:
             memory.evidence_frames += 1
@@ -196,10 +257,6 @@ class PerTrackFallEngine:
         memory.evidence_frames = 0
         if memory.state is FallState.POSSIBLE_FALL:
             memory.state = FallState.NORMAL
-        elif memory.state is FallState.FALL_CONFIRMED:
-            memory.recovery_frames += 1
-            if memory.recovery_frames >= self.recover_consecutive:
-                memory.state = FallState.RECOVERED
         else:
             memory.recovery_frames = 0
         return memory.state
@@ -216,6 +273,23 @@ class PerTrackFallEngine:
             memory.confirmed_at = None
         memory.confirmed_score = None
         memory.peak_fall_probability = None
+        memory.upright_frames = 0
+        memory.saw_upright_posture = False
+        memory.lying_frames = 0
+        memory.upright_recovery_frames = 0
+
+    @staticmethod
+    def _has_active_incident(memory: _TrackMemory) -> bool:
+        """Whether this track must survive short pose/tracking instability."""
+
+        return memory.state in {FallState.FALL_CONFIRMED, FallState.LYING_AFTER_FALL}
+
+    @staticmethod
+    def _clear_temporal_window(memory: _TrackMemory) -> None:
+        """Discard an interrupted LSTM sequence without clearing an incident."""
+
+        memory.features.clear()
+        memory.evidence_frames = 0
         memory.upright_frames = 0
         memory.saw_upright_posture = False
 
@@ -248,11 +322,15 @@ class PerTrackFallEngine:
                 continue
             memory = self._tracks.setdefault(observation.track_id, _TrackMemory(deque(maxlen=self.window_size)))
             if memory.last_seen_frame >= 0 and frame_id != memory.last_seen_frame + 1:
-                self._reset_memory(memory)
+                if self._has_active_incident(memory):
+                    self._clear_temporal_window(memory)
+                else:
+                    self._reset_memory(memory)
             memory.last_seen_frame = frame_id
             rejection_reason = self._input_rejection_reason(observation)
             if rejection_reason is not None:
-                self._reset_memory(memory)
+                if not self._has_active_incident(memory):
+                    self._reset_memory(memory)
                 updates.append(
                     TrackJudgment(
                         track_id=observation.track_id,
@@ -293,7 +371,12 @@ class PerTrackFallEngine:
                     and geometry >= self.geometry_threshold
                     and transition_evidence
                 )
-            state = self._transition(memory, evidence)
+            state = self._transition(
+                memory,
+                evidence,
+                lying=self.is_lying(observation, geometry),
+                upright=self.is_upright(observation),
+            )
             if state is FallState.FALL_CONFIRMED:
                 if memory.confirmed_frame_id is None:
                     memory.confirmed_frame_id = frame_id

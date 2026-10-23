@@ -35,6 +35,14 @@ RESULTS_JSONL_PATH = None
 POSSIBLE_CONSECUTIVE = 1
 CONFIRM_CONSECUTIVE = 1
 RECOVER_CONSECUTIVE = 15
+# A confirmed fall becomes this many consecutive horizontal-pose frames before
+# it is reported as a sustained post-fall lying state.
+LYING_CONSECUTIVE = 5
+LYING_GEOMETRY_THRESHOLD = 0.60
+LYING_ASPECT_RATIO_THRESHOLD = 1.10
+# A person must remain upright for this many frames before a sustained lying
+# state is considered recovered.
+UPRIGHT_RECOVER_CONSECUTIVE = 60
 # Conservative defaults for live CCTV.  The former values accepted unstable
 # pose estimates (for example, a person partly occluded by a bag) too easily.
 PROBABILITY_THRESHOLD = 0.65

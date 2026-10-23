@@ -187,6 +187,7 @@ def render_judgments(frame: cv2.typing.MatLike, observations: list[PoseObservati
         "normal": (0, 220, 0),
         "possible_fall": (0, 200, 255),
         "fall_confirmed": (0, 0, 255),
+        "lying_after_fall": (0, 0, 180),
         "recovered": (255, 180, 0),
     }
     frame_height, frame_width = canvas.shape[:2]
@@ -263,6 +264,12 @@ def main() -> None:
     parser.add_argument("--possible-consecutive", type=int, default=config.POSSIBLE_CONSECUTIVE)
     parser.add_argument("--confirm-consecutive", type=int, default=config.CONFIRM_CONSECUTIVE)
     parser.add_argument("--recover-consecutive", type=int, default=config.RECOVER_CONSECUTIVE)
+    parser.add_argument("--lying-consecutive", type=int, default=config.LYING_CONSECUTIVE,
+                        help="Horizontal-pose frames after a confirmed fall before reporting lying_after_fall")
+    parser.add_argument("--lying-geometry-threshold", type=float, default=config.LYING_GEOMETRY_THRESHOLD)
+    parser.add_argument("--lying-aspect-ratio-threshold", type=float, default=config.LYING_ASPECT_RATIO_THRESHOLD)
+    parser.add_argument("--upright-recover-consecutive", type=int, default=config.UPRIGHT_RECOVER_CONSECUTIVE,
+                        help="Upright frames required to recover from lying_after_fall")
     parser.add_argument("--probability-threshold", type=float, default=config.PROBABILITY_THRESHOLD)
     parser.add_argument("--geometry-threshold", type=float, default=config.GEOMETRY_THRESHOLD)
     parser.add_argument("--min-keypoint-confidence", type=float, default=config.MIN_KEYPOINT_CONFIDENCE,
@@ -298,6 +305,10 @@ def main() -> None:
         parser.error("--frame-api-url cannot be combined with legacy stream/event delivery")
     if not 0 <= args.min_keypoint_confidence <= 1:
         parser.error("--min-keypoint-confidence must be in [0, 1]")
+    if args.lying_consecutive <= 0 or args.upright_recover_consecutive <= 0:
+        parser.error("--lying-consecutive and --upright-recover-consecutive must be positive")
+    if not 0 <= args.lying_geometry_threshold <= 1 or args.lying_aspect_ratio_threshold <= 0:
+        parser.error("--lying-geometry-threshold must be in [0, 1] and --lying-aspect-ratio-threshold must be positive")
     model_path = resolve_under_root(args.model, MODELS_DIR)
     lstm_path = resolve_under_root(args.lstm_model, MODELS_DIR)
     if not model_path.is_file() or not lstm_path.is_file():
@@ -350,6 +361,10 @@ def main() -> None:
         latch_fall=args.latch_fall,
         upright_consecutive=args.upright_consecutive,
         require_upright_transition=args.require_upright_transition,
+        lying_consecutive=args.lying_consecutive,
+        lying_geometry_threshold=args.lying_geometry_threshold,
+        lying_aspect_ratio_threshold=args.lying_aspect_ratio_threshold,
+        upright_recover_consecutive=args.upright_recover_consecutive,
     )
     capture = open_capture(source)
     writer = None

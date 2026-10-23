@@ -20,7 +20,7 @@ def annotations_from_metadata(metadata: object) -> tuple[list[dict], dict]:
 
     for person in metadata.get("persons", []):
         judgment = judgments.get(str(person.get("track_id")), {})
-        state = "fall" if judgment.get("state") == "fall_confirmed" else "normal"
+        state = "fall" if judgment.get("state") in {"fall_confirmed", "lying_after_fall"} else "normal"
         has_fall = has_fall or state == "fall"
         bbox = person.get("bbox_xyxy")
         normalized_bbox = None if not isinstance(bbox, list) or len(bbox) != 4 else [
