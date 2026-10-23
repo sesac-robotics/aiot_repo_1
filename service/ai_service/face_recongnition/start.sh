@@ -38,8 +38,8 @@ if [ "$(docker compose ps --status running -q insightface)" = "" ]; then
 fi
 
 # 웹캠 실행
-echo "[2/2] 웹캠 실행"
+echo "[2/2] PC4 UDP 영상 수신 + 얼굴 검출 실행"
 echo "[INFO] 캡처가 발생하면 Docker에서 자동으로 처리합니다."
 
 cd "$ROOT/webcam"
-exec "$ROOT/webcam/.venv/bin/python" detect_yolov3.py "$@"
+exec "$ROOT/webcam/.venv/bin/python" detect_yolo.py --source udp "$@"

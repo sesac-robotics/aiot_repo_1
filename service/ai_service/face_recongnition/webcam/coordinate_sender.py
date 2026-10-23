@@ -117,7 +117,7 @@ class CoordinateSender:
         finally:
             if connection is not None:
                 try:
-                    connection.sendall(b"N,N\n")
+                    connection.sendall(b"N,N,-1,-1,-1,-1,-1,-1,-1,-1\n")
                 except OSError:
                     pass
                 finally:
