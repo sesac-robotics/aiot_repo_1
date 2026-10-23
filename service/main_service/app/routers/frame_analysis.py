@@ -5,18 +5,21 @@ AI는 ``metadata`` JSON 파트와 ``image`` JPEG 파트를 한 multipart 요청�
 """
 from __future__ import annotations
 
+import asyncio
+import base64
 from hashlib import sha256
 import json
+import time
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from pydantic import ValidationError
 
 from .. import auth
 from ..db import get_conn
 from ..events import publish
 from ..schemas import FallEvent, FrameAnalysis
-from ..services.frame_analysis import store
+from ..services.frame_analysis import camera_presence, processing_metrics, store
 from .falls import receive_fall
 
 router = APIRouter(tags=["AI 실시간 분석"])
@@ -54,6 +57,7 @@ def _ensure_camera(frame: FrameAnalysis) -> None:
                         ON CONFLICT (camera_id) DO UPDATE
                           SET last_seen_at = NOW(), location = COALESCE(hcc.cameras.location, EXCLUDED.location)""",
                      (frame.camera.camera_id, frame.camera.location))
+    camera_presence.mark_refreshed(frame.camera.camera_id)
 
 
 @router.post("/api/v1/live/frame", status_code=201, dependencies=[Depends(auth.device)])
@@ -72,8 +76,28 @@ async def receive_frame_analysis(
     except (json.JSONDecodeError, ValidationError) as exc:
         raise HTTPException(422, "metadata JSON 형식이 올바르지 않습니다") from exc
 
-    _ensure_camera(frame)              # (서버 담당 추가) 처음 보는 카메라는 자동 등록 → 낙상 저장 시 409 방지
-    saved_events = _store_fall_events(frame)
+    started = time.perf_counter()
+    # DB work is exceptional/periodic, never a per-frame operation.  Run the
+    # synchronous psycopg calls off FastAPI's event loop.
+    needs_db = camera_presence.needs_refresh(frame.camera.camera_id)
+    if needs_db:
+        try:
+            await asyncio.to_thread(_ensure_camera, frame)
+        except Exception:
+            # Video remains available from memory while DB is temporarily
+            # down.  Do not mark success: a later frame retries registration.
+            if frame.event.new_events:
+                raise
+    if frame.event.new_events:
+        # A confirmed fall must be durable.  Re-register immediately when a
+        # restarted/cleared DB has forgotten a cached camera.
+        if needs_db:
+            pass
+        else:
+            await asyncio.to_thread(_ensure_camera, frame)
+        saved_events = await asyncio.to_thread(_store_fall_events, frame)
+    else:
+        saved_events = []
     snapshot = store.put(frame.camera.camera_id, frame.model_dump(mode="json"), jpeg)
     # JPEG는 WebSocket으로 보내지 않는다. GUI는 image endpoint에서 필요할 때 가져간다.
     publish("frame_analysis", {
@@ -83,8 +107,11 @@ async def receive_frame_analysis(
         "image_url": f"/api/v1/live/frame/{frame.camera.camera_id}/image",
         "metadata_url": f"/api/v1/live/frame/{frame.camera.camera_id}",
     })
+    processing_ms = (time.perf_counter() - started) * 1000
     return {"accepted": True, "camera_id": frame.camera.camera_id,
-            "frame_id": frame.frame_id, "new_events": saved_events}
+            "frame_id": frame.frame_id, "new_events": saved_events,
+            "processing_ms": round(processing_ms, 2),
+            "processing": processing_metrics.add(processing_ms)}
 
 
 @router.get("/api/v1/live/frame/{camera_id}", dependencies=[Depends(auth.admin)])
@@ -100,4 +127,25 @@ def latest_frame_image(camera_id: str):
     snapshot = store.get(camera_id)
     if snapshot is None:
         raise HTTPException(404, "수신한 프레임이 없습니다")
-    return Response(snapshot.jpeg, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+    return Response(snapshot.jpeg, media_type="image/jpeg", headers={
+        "Cache-Control": "no-store",
+        # GUI verifies this against metadata before drawing annotations.
+        "X-TSAFE-Frame-Id": str(snapshot.metadata["frame_id"]),
+    })
+
+
+@router.get("/api/v1/live/frame/{camera_id}/snapshot", dependencies=[Depends(auth.admin)])
+def latest_frame_snapshot(camera_id: str):
+    """One atomic GUI read: matching analysis JSON and JPEG from one snapshot.
+
+    The older metadata + image endpoints remain available, but two separate
+    requests can straddle an AI update and force the GUI to discard a frame.
+    This endpoint removes that race for the live viewer.
+    """
+    snapshot = store.get(camera_id)
+    if snapshot is None:
+        raise HTTPException(404, "수신한 프레임이 없습니다")
+    return JSONResponse({
+        "metadata": {**snapshot.metadata, "received_at": snapshot.received_at.isoformat()},
+        "jpeg_base64": base64.b64encode(snapshot.jpeg).decode("ascii"),
+    }, headers={"Cache-Control": "no-store"})

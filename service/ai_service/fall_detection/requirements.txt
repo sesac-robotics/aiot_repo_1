@@ -1,0 +1,6 @@
+# Install PyTorch appropriate to this AI Server's CPU/CUDA driver first when
+# GPU acceleration is required. Do not copy a virtual environment between PCs.
+numpy>=1.26,<3
+opencv-python>=4.8,<6
+torch>=2.4,<3
+ultralytics>=8.3,<9
