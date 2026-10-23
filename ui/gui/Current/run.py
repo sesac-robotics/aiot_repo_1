@@ -27,6 +27,8 @@ class Resizer(C.QObject):
   return False
 
 from workflow import WorkflowMixin
+from live_frame_client import LiveFrameClient
+from frame_mapper import annotations_from_metadata
 class App(WorkflowMixin):
  def __init__(self):
   self.app=W.QApplication.instance() or W.QApplication(sys.argv);self.app.setStyle('Fusion');self.app.setStyleSheet((ROOT/'skin.qss').read_text());self.windows={};self.edit_id=None
@@ -57,12 +59,45 @@ class App(WorkflowMixin):
   for k,win in self.windows.items():
    if k!='clip':win.resize(round(1280*scale),round(800*scale))
   self.init_workflow()
- def set_cctv_frame(self,frame):
-  """Display a QImage/QPixmap supplied on the GUI thread by the video receiver."""
+  self.init_live_frame()
+ def init_live_frame(self):
+  image_url=os.getenv('TSAFE_FRAME_IMAGE_URL','http://127.0.0.1:8101/api/v1/live/frame/camera_1/image')
+  metadata_url=os.getenv('TSAFE_FRAME_METADATA_URL') or None
+  self.live_frame=LiveFrameClient(image_url,metadata_url,parent=self.windows['cctv'])
+  self.live_frame.frame_received.connect(self.receive_live_frame)
+  self.live_frame.connection_error.connect(self.live_frame_error)
+  self.app.aboutToQuit.connect(self.live_frame.stop)
+  self.live_frame.start()
+ def receive_live_frame(self,pixmap,metadata):
+  annotations,result=annotations_from_metadata(metadata)
+  self.set_cctv_frame(pixmap,annotations)
+  self.set_fall_detected(result['state']=='fall')
+  self.windows['cctv'].liveCaption.setText(f"Camera 1 · Live · {result['person_count']} person(s)")
+ def live_frame_error(self,message):
+  self.windows['cctv'].liveCaption.setText('Camera 1 · Waiting for Main Service · '+message)
+ def set_cctv_frame(self,frame,annotations=None):
+  """Draw person boxes and binary NORMAL/FALL event tags in the CCTV tab."""
   pixmap=G.QPixmap.fromImage(frame) if isinstance(frame,G.QImage) else frame
   if not isinstance(pixmap,G.QPixmap) or pixmap.isNull():
    raise ValueError('frame must be a non-empty QImage or QPixmap')
-  c=self.windows['cctv'];c.liveImage.setPixmap(pixmap);c.liveCaption.setText('Camera 01 · Live')
+  pixmap=pixmap.copy();painter=G.QPainter(pixmap)
+  try:
+   for annotation in annotations or []:
+    color=G.QColor('#d52e28') if annotation.get('state')=='fall' else G.QColor('#ffbc48')
+    painter.setPen(G.QPen(color,max(2,pixmap.width()//500)))
+    box=annotation.get('bbox')
+    if box is not None:
+     x1,y1,x2,y2=(round(float(v)*pixmap.width()) if i%2==0 else round(float(v)*pixmap.height()) for i,v in enumerate(box))
+     painter.drawRect(min(x1,x2),min(y1,y2),abs(x2-x1),abs(y2-y1))
+     tag='FALL' if annotation.get('state')=='fall' else 'NORMAL'
+     font=G.QFont();font.setBold(True);font.setPointSize(max(9,pixmap.width()//55));painter.setFont(font)
+     metrics=G.QFontMetrics(font);tag_rect=metrics.boundingRect(tag).adjusted(-7,-4,7,4)
+     tag_x=min(x1,x2);tag_y=max(0,min(y1,y2)-tag_rect.height())
+     painter.fillRect(tag_x,tag_y,tag_rect.width(),tag_rect.height(),color)
+     painter.setPen(G.QPen(G.QColor('#111827')))
+     painter.drawText(tag_x+7,tag_y+metrics.ascent()+4,tag)
+  finally:painter.end()
+  c=self.windows['cctv'];c.liveImage.setPixmap(pixmap);c.liveCaption.setText('Camera 1 · Live')
  def set_fall_detected(self,detected):
   """Update the anonymous alert; CCTV never assigns an identity or incident time."""
   c=self.windows['cctv'];c.fallAlert.setText('FALL');c.fallAlert.setVisible(bool(detected));c.fallRange.setVisible(bool(detected));c.confirmButton.setEnabled(bool(detected));c.confirmButton.setText('Confirm')

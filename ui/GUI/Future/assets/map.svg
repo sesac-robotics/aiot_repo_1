@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="840" height="500" viewBox="0 0 840 500">
-<rect width="840" height="500" rx="16" fill="#eef2e9"/><rect x="24" y="24" width="792" height="452" rx="12" fill="#f9f7ee" stroke="#b6c4b7" stroke-width="5"/>
-<g fill="#d6e3d7" stroke="#9db5a3" stroke-width="3"><rect x="60" y="100" width="100" height="150" rx="12"/><rect x="193" y="100" width="100" height="150" rx="12"/><rect x="66" y="108" width="88" height="40" rx="9"/><rect x="199" y="108" width="88" height="40" rx="9"/><rect x="530" y="73" width="210" height="75" rx="10"/><rect x="588" y="300" width="135" height="90" rx="20"/></g>
-<g fill="#b5c7b8"><rect x="560" y="273" width="46" height="22" rx="6"/><rect x="691" y="273" width="46" height="22" rx="6"/><rect x="560" y="403" width="46" height="22" rx="6"/><rect x="691" y="403" width="46" height="22" rx="6"/></g>
-<path d="M335 30V200 M40 288H285 M480 27V160" stroke="#c1caba" stroke-width="7" stroke-dasharray="18 8"/>
-<g font-family="DejaVu Sans,sans-serif" fill="#607465" font-size="20"><text x="70" y="76">Rest</text><text x="592" y="60">Care</text><text x="610" y="464">Dining</text><text x="60" y="440">Camera 01</text></g>
-<ellipse cx="400" cy="320" rx="120" ry="78" fill="#e76456" fill-opacity=".25" stroke="#cf5146" stroke-width="3"/><ellipse cx="400" cy="320" rx="92" ry="57" fill="#e76456" fill-opacity=".18"/><circle cx="400" cy="320" r="13" fill="#ca4f43"/>
-</svg>
