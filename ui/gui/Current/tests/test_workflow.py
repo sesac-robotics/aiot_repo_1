@@ -1,7 +1,8 @@
-import os,sys,unittest,tempfile,shutil,json,time
+import os,sys,unittest,tempfile,shutil,json,time,threading
 from pathlib import Path
 from urllib.request import Request,urlopen
 from urllib.error import HTTPError
+from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen');os.environ['GUI_EVENT_PORT']='0'
 BASE=Path(__file__).resolve().parents[1];sys.path.insert(0,str(BASE))
 import run
@@ -32,9 +33,45 @@ class WorkflowTest(unittest.TestCase):
   a.receive_event({'type':'recognition','person_id':'S-001','name':'Robin Park','role':'Staff','allowed':True});self.assertEqual(d.accessStatus.text(),'Allowed');self.assertEqual(d.identityName.text(),'Robin Park');self.assertEqual(d.doorState.text(),'UNKNOWN')
   a.receive_event({'type':'door','state':'OPEN'});self.assertEqual(d.doorState.text(),'OPEN')
   a.receive_event({'type':'door','state':'CLOSED'});self.assertEqual(d.doorState.text(),'CLOSED')
-  a.receive_event({'type':'fall','detected':True,'name':'IGNORED'});self.assertEqual(a.windows['cctv'].fallAlert.text(),'FALL');self.assertEqual(a.store.events()[0]['name'],'Unknown')
-  a.windows['cctv'].confirmButton.click();self.assertEqual(a.store.events()[0]['event'],'Fall confirmed');self.assertEqual(a.windows['cctv'].fallAlert.text(),'FALL')
+  a.receive_event({'type':'fall','detected':True,'alert_id':'alert-1','name':'IGNORED'});self.assertEqual(a.windows['cctv'].fallAlert.text(),'FALL');self.assertEqual(a.store.events()[0]['name'],'Unknown')
+  a.confirmation_result({'alert_id':'alert-1','success':True});self.assertEqual(a.store.events()[0]['event'],'Fall confirmed');self.assertEqual(a.windows['cctv'].fallAlert.text(),'CONFIRMED')
   w=a.windows['logs'];w.search.setText('Robin');self.assertEqual(sum(not w.logsTable.isRowHidden(i) for i in range(w.logsTable.rowCount())),1)
+ def test_fall_confirm_calls_central_alert_api(self):
+  seen=[]
+  class Handler(BaseHTTPRequestHandler):
+   def log_message(self,*args):pass
+   def do_POST(self):
+    seen.append((self.path,self.headers.get('Authorization'),json.loads(self.rfile.read(int(self.headers['Content-Length'])))))
+    body=b'{"status":"RESOLVED"}' if self.path.endswith('/resolve') else b'{"status":"ACKNOWLEDGED"}';self.send_response(200);self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
+  srv=ThreadingHTTPServer(('127.0.0.1',0),Handler);threading.Thread(target=srv.serve_forever,daemon=True).start()
+  old_url=os.environ.get('TSAFE_PC1_URL');os.environ['TSAFE_PC1_URL']='http://127.0.0.1:'+str(srv.server_address[1])
+  try:
+   self.a.receive_event({'type':'fall','detected':True,'alert_id':'central-alert'})
+   self.a.windows['cctv'].confirmButton.click()
+   self.a.set_fall_detected(True)  # a live-frame refresh must not re-enable the button
+   self.assertEqual(self.a.windows['cctv'].confirmButton.text(),'Confirming…')
+   self.assertFalse(self.a.windows['cctv'].confirmButton.isEnabled())
+   for _ in range(300):
+    self.a.app.processEvents()
+    if seen and self.a.windows['cctv'].confirmButton.text()=='상황 종료':break
+    time.sleep(.01)
+   self.assertEqual(seen,[('/api/v1/alerts/central-alert/acknowledge',None,{})]);self.assertEqual(self.a.windows['cctv'].confirmButton.text(),'상황 종료')
+   self.assertEqual(self.a.windows['cctv'].fallAlert.text(),'CONFIRMED')
+   self.a.set_fall_detected(True)
+   self.assertEqual(self.a.windows['cctv'].confirmButton.text(),'상황 종료')
+   self.assertTrue(self.a.windows['cctv'].confirmButton.isEnabled())
+   self.a.windows['cctv'].confirmButton.click()
+   self.assertEqual(self.a.windows['cctv'].confirmButton.text(),'Resolving…')
+   for _ in range(300):
+    self.a.app.processEvents()
+    if len(seen)==2 and not self.a.windows['cctv'].fallAlert.isVisible():break
+    time.sleep(.01)
+   self.assertEqual([row[0] for row in seen],['/api/v1/alerts/central-alert/acknowledge','/api/v1/alerts/central-alert/resolve'])
+   self.assertFalse(self.a.windows['cctv'].fallAlert.isVisible())
+  finally:
+   srv.shutdown();srv.server_close()
+   if old_url is None:os.environ.pop('TSAFE_PC1_URL',None)
+   else:os.environ['TSAFE_PC1_URL']=old_url
  def test_external_db_then_card(self):
   a=self.a;a.db_mode='external';a.receive_event({'type':'card','present':True,'uid':'CARD1'});self.fill();self.assertTrue(a.save());req=a.request_snapshot()[0];self.assertEqual(req['type'],'db_save');self.assertEqual(len(a.store.people()),4)
   a.receive_event({'type':'db_result','request_id':req['request_id'],'success':False});self.assertIn('Failed',a.windows['register'].dbStatus.text());self.assertEqual(a.request_snapshot(),[])

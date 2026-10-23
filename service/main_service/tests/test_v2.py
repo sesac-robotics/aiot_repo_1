@@ -262,6 +262,8 @@ def test_live_frame_and_fall(env):
     assert img.status_code == 200 and img.content == JPEG and img.headers["content-type"] == "image/jpeg"
     meta = c.get("/api/v1/live/frame/camera_1").json()             # GUI live_frame_client가 읽는 형식
     assert meta["persons"][0]["track_id"] == 3 and meta["source_size"] == [1280, 720] and "received_at" in meta
+    snapshot = c.get("/api/v1/live/frame/camera_1/snapshot").json()
+    assert snapshot["metadata"]["frame_id"] == 1 and snapshot["jpeg_base64"]
     assert c.get("/api/v1/alerts?status=ACTIVE").json()["items"] == []
 
     r = _post(c, _meta(2, [_fall(3, 2)])).json()                    # 낙상 확정 → DB + 알람 (카메라 자동 등록)
@@ -271,6 +273,8 @@ def test_live_frame_and_fall(env):
     assert len(alerts) == 1 and alerts[0]["camera_id"] == "camera_1" and alerts[0]["location"] == "ROOM_1"
     assert alerts[0]["confidence"] == pytest.approx(0.93)
     assert wait(lambda: any(e["detected"] for e in gui.of("fall")))
+    fall = next(e for e in gui.of("fall") if e["detected"])
+    assert fall["alert_id"] == alerts[0]["alert_id"] and fall["status"] == "ACTIVE"
 
     res = c.post("/api/v1/alerts/resolve_active", json={"note": "현장 확인"}).json()   # Emergency release
     assert res["count"] == 1

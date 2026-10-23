@@ -38,7 +38,7 @@ RECOVER_CONSECUTIVE = 15
 # Conservative defaults for live CCTV.  The former values accepted unstable
 # pose estimates (for example, a person partly occluded by a bag) too easily.
 PROBABILITY_THRESHOLD = 0.65
-GEOMETRY_THRESHOLD = 0.95
+GEOMETRY_THRESHOLD = 0.7
 MIN_KEYPOINT_CONFIDENCE = 0.25
 UPRIGHT_CONSECUTIVE = 5
 REQUIRE_UPRIGHT_TRANSITION = True

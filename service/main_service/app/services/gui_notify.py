@@ -44,9 +44,14 @@ def to_gui_event(event_type: str, data: dict) -> dict | None:
     if event_type == "door_state" and data.get("online") is False:
         return {"type": "door", "state": "UNKNOWN", "timestamp": now}
     if event_type == "fall_alert":
-        return {"type": "fall", "detected": True, "event_id": f"fall-{data.get('alert_id')}", "timestamp": now}
+        # ``alert_id`` lets the GUI acknowledge the exact central alert.  It
+        # is deliberately carried as event data, not used as the GUI's local
+        # log/database key.
+        return {"type": "fall", "detected": True, "alert_id": str(data.get("alert_id") or ""),
+                "status": "ACTIVE", "event_id": f"fall-{data.get('alert_id')}", "timestamp": now}
     if event_type == "alert_update" and data.get("status") == "RESOLVED":
-        return {"type": "fall", "detected": False, "event_id": f"fall-clear-{data.get('alert_id')}", "timestamp": now}
+        return {"type": "fall", "detected": False, "alert_id": str(data.get("alert_id") or ""),
+                "status": "RESOLVED", "event_id": f"fall-clear-{data.get('alert_id')}", "timestamp": now}
     return None
 
 

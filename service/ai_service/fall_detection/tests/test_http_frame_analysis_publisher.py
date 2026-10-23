@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import threading
+import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import numpy as np
 
-from central_delivery import HttpFrameAnalysisPublisher
+from central_delivery import AsyncFrameAnalysisDelivery, CentralDeliveryError, HttpFrameAnalysisPublisher
 from run_fall_detection import frame_analysis_for_main_service
 
 
@@ -94,6 +95,45 @@ class HttpFrameAnalysisPublisherTest(unittest.TestCase):
               "confirmed_frame_id": 7, "confirmed_at": "2026-10-21T12:00:00.000+0900",
               "fall_probability": 0.9}],
         )
+
+    def test_async_delivery_drops_only_display_and_retries_event(self) -> None:
+        class SlowPublisher:
+            def __init__(self):
+                self.calls: list[tuple[int, bool]] = []
+                self.event_attempts = 0
+
+            def publish(self, _frame, metadata, *, force=False):
+                frame_id = metadata["frame_id"]
+                self.calls.append((frame_id, force))
+                if force:
+                    self.event_attempts += 1
+                    if self.event_attempts == 1:
+                        raise CentralDeliveryError("temporary failure")
+                else:
+                    time.sleep(.08)
+                return 201
+
+        publisher = SlowPublisher()
+        delivery = AsyncFrameAnalysisDelivery(publisher, retry_seconds=.01)  # type: ignore[arg-type]
+        image = np.zeros((8, 8, 3), dtype=np.uint8)
+        try:
+            # The inference caller only replaces the one display mailbox; it
+            # never waits for the deliberately slow HTTP publisher.
+            started = time.perf_counter()
+            for frame_id in range(10):
+                delivery.submit_display(image, {"frame_id": frame_id})
+            self.assertLess(time.perf_counter() - started, .05)
+            delivery.submit_event(image, {"frame_id": 99})
+            deadline = time.monotonic() + 1
+            while delivery.metrics.snapshot()["event_sent"] != 1 and time.monotonic() < deadline:
+                time.sleep(.01)
+            stats = delivery.metrics.snapshot()
+            self.assertEqual(stats["event_sent"], 1)
+            self.assertGreaterEqual(stats["event_retries"], 1)
+            self.assertGreater(stats["display_dropped"], 0)
+            self.assertIn((99, True), publisher.calls)
+        finally:
+            delivery.close()
 
 
 if __name__ == "__main__":

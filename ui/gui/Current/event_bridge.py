@@ -6,6 +6,8 @@ from PyQt6.QtCore import QObject,pyqtSignal
 class Signals(QObject):
  incoming=pyqtSignal(dict)
  request_ready=pyqtSignal(dict)
+ confirmation_result=pyqtSignal(dict)
+ resolution_result=pyqtSignal(dict)
 def validate(e):
  if not isinstance(e,dict):raise ValueError('JSON object required')
  typ=e.get('type')
@@ -28,6 +30,7 @@ def validate(e):
   if e.get('state') not in ['OPEN','CLOSED','UNKNOWN']:raise ValueError('Invalid door state')
  elif typ=='fall':
   if type(e.get('detected')) is not bool:raise ValueError('detected must be boolean')
+  if 'alert_id' in e and (not isinstance(e['alert_id'],str) or not e['alert_id'].strip()):raise ValueError('alert_id must be a non-empty string')
  for key,value in e.items():
   if isinstance(value,str) and len(value)>4096:raise ValueError('String too long')
  if e.get('timestamp'):

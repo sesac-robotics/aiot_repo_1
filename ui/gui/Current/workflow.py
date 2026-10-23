@@ -1,6 +1,8 @@
 import os,json,uuid,threading,math
 from datetime import date,datetime
 from zoneinfo import ZoneInfo
+from urllib.error import HTTPError,URLError
+from urllib.request import Request,urlopen
 from PyQt6 import QtWidgets as W,QtCore as C
 from event_store import Store
 from event_bridge import Signals,Bridge,validate
@@ -10,6 +12,9 @@ class WorkflowMixin:
   if self.db_mode not in ['local','external']:raise ValueError('GUI_DB_MODE must be local or external')
  def init_workflow(self):
   self.events=Signals();self.events.incoming.connect(self.receive_event);self.bridge=None;self.reset_status()
+  self.confirming_alert_id=None;self.acknowledged_alert_id=None;self.resolving_alert_id=None
+  self.events.confirmation_result.connect(self.confirmation_result)
+  self.events.resolution_result.connect(self.resolution_result)
   d=self.windows['door_access'];d.identityName.setText('Waiting');d.identityId.setText('ID  —')
   if hasattr(d,'identityRole'):d.identityRole.setText('—')
   for key in ['sex','birth','blood','rh','height','weight','disease','medicine']:getattr(d,'value_'+key).setText('—')
@@ -20,7 +25,59 @@ class WorkflowMixin:
    try:self.bridge=Bridge(self.events,self.store,self.request_snapshot,self.root,port);self.app.aboutToQuit.connect(self.bridge.close)
    except (OSError,ValueError) as exc:W.QMessageBox.warning(self.windows['home'],'Event connection',str(exc))
  def confirm_fall(self):
-  c=self.windows['cctv'];c.confirmButton.setText('Confirmed');c.confirmButton.setEnabled(False);self.record('Fall confirmed',details='Staff acknowledged')
+  """Acknowledge the central alert; SQLite records only the GUI-side audit log."""
+  c=self.windows['cctv'];alert_id=getattr(self,'active_alert_id',None)
+  if not alert_id:
+   self.record('Fall confirmation unavailable',details='No central alert ID was supplied')
+   return
+  if alert_id==getattr(self,'acknowledged_alert_id',None):
+   self.resolve_fall()
+   return
+  self.confirming_alert_id=alert_id
+  c.confirmButton.setText('Confirming…');c.confirmButton.setEnabled(False)
+  base=os.getenv('TSAFE_PC1_URL','http://127.0.0.1:8101').rstrip('/')
+  staff_id=os.getenv('TSAFE_STAFF_ID','').strip()
+  def request_confirmation():
+   try:
+    payload={} if not staff_id else {'staff_id':staff_id}
+    req=Request(base+'/api/v1/alerts/'+alert_id+'/acknowledge',data=json.dumps(payload).encode(),method='POST',headers={'Content-Type':'application/json'})
+    with urlopen(req,timeout=5) as response:result=json.load(response)
+    self.events.confirmation_result.emit({'alert_id':alert_id,'success':result.get('status')=='ACKNOWLEDGED'})
+   except HTTPError as exc:self.events.confirmation_result.emit({'alert_id':alert_id,'success':False,'message':'Server HTTP '+str(exc.code)})
+   except (URLError,TimeoutError,OSError,ValueError) as exc:self.events.confirmation_result.emit({'alert_id':alert_id,'success':False,'message':'Server connection failed'})
+  threading.Thread(target=request_confirmation,name='fall-acknowledge',daemon=True).start()
+ def resolve_fall(self):
+  """Close an acknowledged central alert; video tracking remains independent."""
+  c=self.windows['cctv'];alert_id=getattr(self,'active_alert_id',None)
+  if not alert_id or alert_id!=getattr(self,'acknowledged_alert_id',None):return
+  self.resolving_alert_id=alert_id
+  c.confirmButton.setText('Resolving…');c.confirmButton.setEnabled(False)
+  base=os.getenv('TSAFE_PC1_URL','http://127.0.0.1:8101').rstrip('/')
+  staff_id=os.getenv('TSAFE_STAFF_ID','').strip()
+  def request_resolution():
+   try:
+    payload={} if not staff_id else {'staff_id':staff_id}
+    req=Request(base+'/api/v1/alerts/'+alert_id+'/resolve',data=json.dumps(payload).encode(),method='POST',headers={'Content-Type':'application/json'})
+    with urlopen(req,timeout=5) as response:result=json.load(response)
+    self.events.resolution_result.emit({'alert_id':alert_id,'success':result.get('status')=='RESOLVED'})
+   except HTTPError as exc:self.events.resolution_result.emit({'alert_id':alert_id,'success':False,'message':'Server HTTP '+str(exc.code)})
+   except (URLError,TimeoutError,OSError,ValueError) as exc:self.events.resolution_result.emit({'alert_id':alert_id,'success':False,'message':'Server connection failed'})
+  threading.Thread(target=request_resolution,name='fall-resolve',daemon=True).start()
+ def confirmation_result(self,result):
+  c=self.windows['cctv']
+  if result.get('alert_id')!=getattr(self,'active_alert_id',None):return
+  if result.get('success'):
+   self.confirming_alert_id=None;self.acknowledged_alert_id=result['alert_id'];c.fallAlert.setText('CONFIRMED');c.confirmButton.setText('상황 종료');c.confirmButton.setEnabled(True);self.record('Fall confirmed',details='Central server acknowledged',payload={'event_id':'fall-ack-'+result['alert_id']})
+  else:
+   self.confirming_alert_id=None;c.confirmButton.setText('Confirm');c.confirmButton.setEnabled(True);self.record('Fall confirm failed',details=result.get('message','Central server rejected acknowledgement'))
+ def resolution_result(self,result):
+  c=self.windows['cctv']
+  if result.get('alert_id')!=getattr(self,'active_alert_id',None):return
+  self.resolving_alert_id=None
+  if result.get('success'):
+   self.active_alert_id=None;self.acknowledged_alert_id=None;self.set_fall_detected(False);self.record('Fall resolved',details='Central server resolved incident',payload={'event_id':'fall-resolve-'+result['alert_id']})
+  else:
+   c.confirmButton.setText('상황 종료');c.confirmButton.setEnabled(True);self.record('Fall resolve failed',details=result.get('message','Central server rejected resolution'))
  def request_snapshot(self):
   with self.pending_lock:return json.loads(json.dumps(list(self.pending.values())))
  def queue(self,data):
@@ -137,6 +194,10 @@ class WorkflowMixin:
    elif typ=='recognition':self.recognize(e)
    elif typ=='door':self.update_door(e['state'],True,e)
    elif typ=='fall':
+    if e['detected'] and e.get('alert_id'):
+     if e['alert_id']!=getattr(self,'active_alert_id',None):self.confirming_alert_id=None;self.acknowledged_alert_id=None;self.resolving_alert_id=None
+     self.active_alert_id=e['alert_id']
+    if not e['detected'] and e.get('alert_id')==getattr(self,'active_alert_id',None):self.active_alert_id=None;self.confirming_alert_id=None;self.acknowledged_alert_id=None;self.resolving_alert_id=None
     self.set_fall_detected(e['detected'])
     if e['detected']:self.record('Fall',details='Camera 01',payload=e)
    if e.get('event_id'):self.seen.add(e['event_id'])

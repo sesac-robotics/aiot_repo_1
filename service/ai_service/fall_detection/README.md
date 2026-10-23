@@ -25,7 +25,7 @@ PYENV_VERSION=proj_iot pyenv exec python run_fall_detection.py
 ## PC1 분석 결과 전송
 
 `config.py`의 `FRAME_API_URL`을 PC1 HTTP 주소로 설정하면, AI는 분석을 계속 수행하면서
-설정한 `FRAME_MAX_FPS`(기본 5)마다 하나의 `frame_analysis` 메시지를 보낸다. 현재
+설정한 `FRAME_MAX_FPS`(기본 20)마다 하나의 `frame_analysis` 메시지를 보낸다. 현재
 Main Service 수신 주소는 `http://<PC1_IP>:8101/api/v1/live/frame`이다. 전송마다
 원본 화면을 축소한 JPEG와 같은 프레임의 box·COCO-17 관절·track ID·낙상 판단 상태를
 함께 보낸다. 낙상 확정 이벤트가 있으면 `event.new_events`에 추가된다.

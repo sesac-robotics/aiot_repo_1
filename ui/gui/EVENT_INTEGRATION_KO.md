@@ -10,6 +10,10 @@ Current는 장치 이벤트를 받아 화면/Logs/SQLite에 반영합니다.
 - GUI_EVENT_HOST: 기본 127.0.0.1. 다른 PC에서 직접 보내려면 0.0.0.0 등 수신 주소 지정.
 - GUI_EVENT_TOKEN: 지정하지 않으면 data/gui_event.token에서 읽거나 최초 생성.
 - GUI_DB_MODE: local(기본), external(PC1 어댑터/외부 DB 응답 대기).
+- TSAFE_PC1_URL: Confirm이 Main Service 알림 API를 호출할 주소(기본 http://127.0.0.1:8101).
+- TSAFE_STAFF_ID: 선택. Confirm을 누른 담당자 ID를 중앙 알림에 기록.
+- TSAFE_FRAME_POLL_MS: CCTV 스냅샷 조회 간격. 기본 50ms(20FPS).
+- TSAFE_FRAME_BUFFER_FRAMES: CCTV 표시 안정화용 짧은 버퍼 프레임 수. 기본 2(약 0.1초 지연).
 - 클라이언트 GUI_EVENT_URL: 기본 http://127.0.0.1:8765.
 
 같은 PC에서 device_client.GUIClient()는 토큰 파일을 자동 사용합니다.
@@ -130,13 +134,14 @@ state는 OPEN/CLOSED/UNKNOWN입니다. OPEN은 초록색, CLOSED는 빨간색입
 ## 낙상
 
 ```json
-{"type":"fall","detected":true}
+{"type":"fall","detected":true,"alert_id":"중앙_PostgreSQL_alert_UUID","status":"ACTIVE"}
 ```
 
 해제는 detected:false입니다. CCTV에는 FALL만 표시합니다. 로그의 낙상 이름도 Unknown입니다.
 실제 발생/수신 기록의 시간은 로그에 저장하지만 CCTV 알림에는 표시하지 않습니다.
 지도 좌표는 기존 샘플 범위이며 실제 좌표 변환은 별도로 연결해야 합니다.
-Confirm은 알림 확인 이벤트를 기록하며 실제 낙상 센서 상태를 변경하지 않습니다.
+`alert_id`가 있으면 Confirm은 Main Service의 `POST /api/v1/alerts/{alert_id}/acknowledge`를 호출합니다.
+성공 응답 뒤에만 GUI 로컬 SQLite에 화면용 감사 로그를 남기며, 낙상 센서 상태를 변경하지 않습니다.
 
 ## 이벤트 시간과 중복
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -74,10 +75,10 @@ class HttpFrameAnalysisPublisher:
         body.extend(f"--{boundary}--\r\n".encode("ascii"))
         return bytes(body)
 
-    def publish(self, frame: np.ndarray, metadata: dict[str, object]) -> int | None:
+    def publish(self, frame: np.ndarray, metadata: dict[str, object], *, force: bool = False) -> int | None:
         """Post one analysis message, or return None when rate-limited."""
         now = time.monotonic()
-        if now - self._last_sent_at < 1.0 / self.max_fps:
+        if not force and now - self._last_sent_at < 1.0 / self.max_fps:
             return None
         display = self._display_frame(frame)
         ok, encoded = cv2.imencode(
@@ -112,6 +113,116 @@ class HttpFrameAnalysisPublisher:
                 return response.status
         except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as exc:
             raise CentralDeliveryError(f"could not deliver frame analysis: {exc}") from exc
+
+
+@dataclass
+class DeliveryMetrics:
+    """Thread-safe counters used by the live latency report."""
+
+    display_enqueued: int = 0
+    display_sent: int = 0
+    display_dropped: int = 0
+    display_failures: int = 0
+    event_enqueued: int = 0
+    event_sent: int = 0
+    event_retries: int = 0
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+
+    def add(self, name: str, value: int = 1) -> None:
+        with self._lock:
+            setattr(self, name, getattr(self, name) + value)
+
+    def snapshot(self) -> dict[str, int]:
+        with self._lock:
+            return {name: getattr(self, name) for name in (
+                "display_enqueued", "display_sent", "display_dropped", "display_failures",
+                "event_enqueued", "event_sent", "event_retries",
+            )}
+
+
+class AsyncFrameAnalysisDelivery:
+    """Keep HTTP waits out of inference while preserving event delivery.
+
+    The display mailbox intentionally contains at most one item: replacing it
+    drops only an obsolete *display* frame.  Confirmed-fall packets use a
+    separate FIFO and are retried until accepted; their stable event ID is
+    deduplicated by the Main Service.
+    """
+
+    def __init__(self, publisher: HttpFrameAnalysisPublisher, *, retry_seconds: float = 0.25):
+        self.publisher = publisher
+        self.retry_seconds = retry_seconds
+        self.metrics = DeliveryMetrics()
+        self._display: tuple[np.ndarray, dict[str, object]] | None = None
+        self._events: list[tuple[np.ndarray, dict[str, object]]] = []
+        self._condition = threading.Condition()
+        self._stopping = False
+        self._display_thread = threading.Thread(target=self._run_display, name="frame-display-http", daemon=True)
+        self._event_thread = threading.Thread(target=self._run_events, name="fall-event-http", daemon=True)
+        self._display_thread.start()
+        self._event_thread.start()
+
+    @staticmethod
+    def _packet(frame: np.ndarray, metadata: dict[str, object]) -> tuple[np.ndarray, dict[str, object]]:
+        # Capture buffers can be reused by OpenCV; copying here makes JSON and
+        # JPEG refer to the exact inference frame after the loop advances.
+        return frame.copy(), metadata
+
+    def submit_display(self, frame: np.ndarray, metadata: dict[str, object]) -> None:
+        with self._condition:
+            if self._display is not None:
+                self.metrics.add("display_dropped")
+            self._display = self._packet(frame, metadata)
+            self.metrics.add("display_enqueued")
+            self._condition.notify_all()
+
+    def submit_event(self, frame: np.ndarray, metadata: dict[str, object]) -> None:
+        with self._condition:
+            self._events.append(self._packet(frame, metadata))
+            self.metrics.add("event_enqueued")
+            self._condition.notify_all()
+
+    def _run_display(self) -> None:
+        while True:
+            with self._condition:
+                while self._display is None and not self._stopping:
+                    self._condition.wait()
+                if self._stopping and self._display is None:
+                    return
+                frame, metadata = self._display
+                self._display = None
+            try:
+                if self.publisher.publish(frame, metadata) is not None:
+                    self.metrics.add("display_sent")
+            except CentralDeliveryError:
+                self.metrics.add("display_failures")
+
+    def _run_events(self) -> None:
+        while True:
+            with self._condition:
+                while not self._events and not self._stopping:
+                    self._condition.wait()
+                if self._stopping and not self._events:
+                    return
+                frame, metadata = self._events[0]
+            try:
+                self.publisher.publish(frame, metadata, force=True)
+            except CentralDeliveryError:
+                self.metrics.add("event_retries")
+                time.sleep(self.retry_seconds)
+                continue
+            with self._condition:
+                self._events.pop(0)
+            self.metrics.add("event_sent")
+
+    def close(self, timeout: float = 2.0) -> None:
+        """Stop display immediately; give queued confirmed events a bounded drain."""
+        with self._condition:
+            self._stopping = True
+            self._display = None
+            self._condition.notify_all()
+        self._display_thread.join(timeout=timeout)
+        self._event_thread.join(timeout=timeout)
 
 
 def build_fall_event(

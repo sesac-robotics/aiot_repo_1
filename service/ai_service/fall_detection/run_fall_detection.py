@@ -30,6 +30,7 @@ from ultralytics import YOLO  # noqa: E402
 
 from adapters import observations_from_yolo_result
 from central_delivery import (
+    AsyncFrameAnalysisDelivery,
     CentralDeliveryError,
     HttpFrameAnalysisPublisher,
     HttpJsonEventPublisher,
@@ -81,6 +82,18 @@ def build_camera_metadata(camera_id: str, location: str | None) -> dict[str, str
 def lstm_device_value(device: str | int) -> str:
     """Convert Ultralytics' numeric CUDA device convention for PyTorch."""
     return f"cuda:{device}" if isinstance(device, int) else str(device)
+
+
+def latency_summary(samples_ms: list[float]) -> dict[str, float | int]:
+    """Small dependency-free rolling-report helper for live verification."""
+    if not samples_ms:
+        return {"count": 0, "avg_ms": 0.0, "p95_ms": 0.0}
+    ordered = sorted(samples_ms)
+    return {
+        "count": len(samples_ms),
+        "avg_ms": round(sum(samples_ms) / len(samples_ms), 2),
+        "p95_ms": round(ordered[min(len(ordered) - 1, int(len(ordered) * .95))], 2),
+    }
 
 
 def open_capture(source: str | int) -> cv2.VideoCapture:
@@ -361,13 +374,14 @@ def main() -> None:
             timeout_seconds=args.frame_timeout_seconds,
         )
     )
+    frame_delivery = None if frame_publisher is None else AsyncFrameAnalysisDelivery(frame_publisher)
     stream_publisher = None
     delivered_event_keys: set[tuple[str, int, int]] = set()
     next_event_delivery_attempt: dict[tuple[str, int, int], float] = {}
     pending_frame_events: dict[tuple[str, int, int], dict[str, object]] = {}
-    next_frame_delivery_attempt = 0.0
     frame_id = 0
     started = time.perf_counter()
+    inference_samples_ms: list[float] = []
     window_name = "YOLO Pose Fall Candidate (Q / Esc: exit)"
     if not args.no_show:
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
@@ -378,6 +392,7 @@ def main() -> None:
             ok, frame = capture.read()
             if not ok or frame is None:
                 break
+            inference_started = time.perf_counter()
             timestamp_ms = round(capture.get(cv2.CAP_PROP_POS_MSEC)) if not is_rtsp else round((time.perf_counter() - started) * 1000)
             wall_time_ms = time.time_ns() // 1_000_000
             local_time = time.localtime(wall_time_ms / 1000)
@@ -403,6 +418,9 @@ def main() -> None:
                 timestamp_ms=timestamp_ms,
                 event_at=event_at,
             )
+            # Covers model tracking + LSTM/FSM update only; delivery is on
+            # workers and intentionally excluded from inference latency.
+            inference_samples_ms.append((time.perf_counter() - inference_started) * 1000)
             height, width = frame.shape[:2]
             needs_rendered = output_path is not None or args.stream_publish_url is not None or not args.no_show
             rendered = None
@@ -460,22 +478,17 @@ def main() -> None:
                 ],
                 "new_events": [],
             }
-            if frame_publisher is not None and time.monotonic() >= next_frame_delivery_attempt:
-                frame_record = frame_analysis_for_main_service(
-                    record, list(pending_frame_events.values())
-                )
-                try:
-                    response_status = frame_publisher.publish(frame, frame_record)
-                except CentralDeliveryError as exc:
-                    if pending_frame_events:
-                        print(f"[WARN] frame analysis/event delivery failed: {exc}")
-                        next_frame_delivery_attempt = time.monotonic() + 1.0
-                else:
-                    if response_status is not None and pending_frame_events:
-                        delivered_event_keys.update(pending_frame_events)
-                        pending_frame_events.clear()
-                        next_frame_delivery_attempt = 0.0
-                        print(f"[EVENT] delivered frame analysis with fall_confirmed HTTP {response_status}")
+            if frame_delivery is not None:
+                # Display traffic is latest-only.  It never carries confirmed
+                # events, so replacing an old display frame cannot lose one.
+                frame_delivery.submit_display(frame, frame_analysis_for_main_service(record, []))
+                for key, payload in list(pending_frame_events.items()):
+                    if key in delivered_event_keys:
+                        continue
+                    event_record = frame_analysis_for_main_service(record, [payload])
+                    frame_delivery.submit_event(frame, event_record)
+                    delivered_event_keys.add(key)  # server event_id makes retries idempotent
+                pending_frame_events.clear()
             if json_file is not None:
                 json_file.write(json.dumps(record, ensure_ascii=False) + "\n")
             if output_path is not None:
@@ -533,8 +546,12 @@ def main() -> None:
             json_file.close()
         if stream_publisher is not None:
             stream_publisher.close()
+        if frame_delivery is not None:
+            frame_delivery.close()
         cv2.destroyAllWindows()
-    print(f"[DONE] processed_frames={frame_id} elapsed_seconds={time.perf_counter() - started:.2f}")
+    delivery_stats = {} if frame_delivery is None else frame_delivery.metrics.snapshot()
+    print(f"[DONE] processed_frames={frame_id} elapsed_seconds={time.perf_counter() - started:.2f} "
+          f"inference={latency_summary(inference_samples_ms)} delivery={delivery_stats}")
 
 
 if __name__ == "__main__":

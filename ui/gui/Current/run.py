@@ -63,18 +63,28 @@ class App(WorkflowMixin):
  def init_live_frame(self):
   image_url=os.getenv('TSAFE_FRAME_IMAGE_URL','http://127.0.0.1:8101/api/v1/live/frame/camera_1/image')
   metadata_url=os.getenv('TSAFE_FRAME_METADATA_URL') or None
-  self.live_frame=LiveFrameClient(image_url,metadata_url,parent=self.windows['cctv'])
+  # Atomic snapshots avoid metadata/image races; 50 ms matches the AI's
+  # configured 20 FPS ceiling on a local network.
+  poll_ms=int(os.getenv('TSAFE_FRAME_POLL_MS','50'))
+  buffer_frames=int(os.getenv('TSAFE_FRAME_BUFFER_FRAMES','2'))
+  self.live_frame=LiveFrameClient(image_url,metadata_url,interval_ms=poll_ms,buffer_frames=buffer_frames,parent=self.windows['cctv'])
   self.live_frame.frame_received.connect(self.receive_live_frame)
   self.live_frame.connection_error.connect(self.live_frame_error)
+  self.live_frame.metrics_updated.connect(self.live_frame_metrics)
   self.app.aboutToQuit.connect(self.live_frame.stop)
   self.live_frame.start()
  def receive_live_frame(self,pixmap,metadata):
   annotations,result=annotations_from_metadata(metadata)
   self.set_cctv_frame(pixmap,annotations)
-  self.set_fall_detected(result['state']=='fall')
+  # A durable central alert stays visible even if later video frames no
+  # longer classify the person as fallen; only its RESOLVED event clears it.
+  self.set_fall_detected(result['state']=='fall' or bool(getattr(self,'active_alert_id',None)))
   self.windows['cctv'].liveCaption.setText(f"Camera 1 · Live · {result['person_count']} person(s)")
  def live_frame_error(self,message):
   self.windows['cctv'].liveCaption.setText('Camera 1 · Waiting for Main Service · '+message)
+ def live_frame_metrics(self,metrics):
+  age='—' if metrics['age_ms'] is None else f"{metrics['age_ms']:.0f}ms (p95 {metrics['age_p95_ms']:.0f}ms)"
+  self.windows['cctv'].liveCaption.setText(f"Camera 1 · Live · {metrics['fps']:.1f} FPS · age {age} · drop {metrics['dropped']}")
  def set_cctv_frame(self,frame,annotations=None):
   """Draw person boxes and binary NORMAL/FALL event tags in the CCTV tab."""
   pixmap=G.QPixmap.fromImage(frame) if isinstance(frame,G.QImage) else frame
@@ -100,7 +110,20 @@ class App(WorkflowMixin):
   c=self.windows['cctv'];c.liveImage.setPixmap(pixmap);c.liveCaption.setText('Camera 1 · Live')
  def set_fall_detected(self,detected):
   """Update the anonymous alert; CCTV never assigns an identity or incident time."""
-  c=self.windows['cctv'];c.fallAlert.setText('FALL');c.fallAlert.setVisible(bool(detected));c.fallRange.setVisible(bool(detected));c.confirmButton.setEnabled(bool(detected));c.confirmButton.setText('Confirm')
+  c=self.windows['cctv'];c.fallAlert.setVisible(bool(detected));c.fallRange.setVisible(bool(detected))
+  alert_id=getattr(self,'active_alert_id',None)
+  if not detected or not alert_id:
+   c.confirmButton.setText('Confirm');c.confirmButton.setEnabled(False)
+  elif alert_id==getattr(self,'confirming_alert_id',None):
+   c.confirmButton.setText('Confirming…');c.confirmButton.setEnabled(False)
+  elif alert_id==getattr(self,'resolving_alert_id',None):
+   c.confirmButton.setText('Resolving…');c.confirmButton.setEnabled(False)
+  elif alert_id==getattr(self,'acknowledged_alert_id',None):
+   c.fallAlert.setText('CONFIRMED')
+   c.confirmButton.setText('상황 종료');c.confirmButton.setEnabled(True)
+  else:
+   c.fallAlert.setText('FALL')
+   c.confirmButton.setText('Confirm');c.confirmButton.setEnabled(True)
  def configure_tables(self):
   for win in self.windows.values():
    for t in win.findChildren(W.QTableWidget):t.horizontalHeader().setSectionResizeMode(W.QHeaderView.ResizeMode.Stretch);t.verticalHeader().hide();t.verticalHeader().setDefaultSectionSize(60);t.setSelectionMode(W.QAbstractItemView.SelectionMode.SingleSelection)
