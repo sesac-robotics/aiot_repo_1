@@ -23,6 +23,8 @@ PC1_URL = os.getenv('PC1_EMBEDDING_URL', '').strip()
 PC1_TOKEN = os.getenv('PC1_EMBEDDING_TOKEN', '').strip()
 DEVICE_ID = os.getenv('DEVICE_ID', 'PC2')
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
+POLL_INTERVAL = 0.1
+RETRY_INTERVAL = 5.0
 
 
 def write_json_atomic(path, data):
@@ -60,11 +62,13 @@ def send_pending():
             if PC1_TOKEN:
                 headers['Authorization'] = f'Bearer {PC1_TOKEN}'
             request = Request(PC1_URL, data=payload, headers=headers, method='POST')
+            started = time.perf_counter()
             with urlopen(request, timeout=5) as response:
                 if not 200 <= response.status < 300:
                     raise RuntimeError(f'HTTP {response.status}')
             path.unlink()
-            print('[PC1 SENT]', path.stem, flush=True)
+            print('[PC1 SENT]', path.stem, 'http_ms:',
+                  round((time.perf_counter() - started) * 1000, 2), flush=True)
         except Exception as exc:
             print('[PC1 WAIT]', str(exc), flush=True)
             break
@@ -81,6 +85,7 @@ def run():
     previous_states = {}
     while True:
         try:
+            new_pending = False
             files = sorted(p for p in CAPTURE_DIR.iterdir()
                            if p.is_file() and p.suffix.lower() in EXTENSIONS)
             present = set(files)
@@ -111,6 +116,7 @@ def run():
                     write_json_atomic(RESULT_DIR / f'{event_id}.json', event)
                     if PC1_URL:
                         write_json_atomic(OUTBOX_DIR / f'{event_id}.json', event)
+                        new_pending = True
                     dest = PROCESSED_DIR / f'{event_id}_{path.name}'
                     os.replace(path, dest)
                     previous_states.pop(path, None)
@@ -121,12 +127,13 @@ def run():
                     previous_states.pop(path, None)
                 except Exception as exc:
                     print('[PROCESS ERROR]', path.name, repr(exc), flush=True)
-            if time.monotonic() - last_retry >= 5:
+            # New captures send now; only failed/queued results wait for retry.
+            if new_pending or time.monotonic() - last_retry >= RETRY_INTERVAL:
                 send_pending()
                 last_retry = time.monotonic()
         except Exception as exc:
             print('[WATCH ERROR]', repr(exc), flush=True)
-        time.sleep(0.5)
+        time.sleep(POLL_INTERVAL)
 
 
 if __name__ == '__main__':
