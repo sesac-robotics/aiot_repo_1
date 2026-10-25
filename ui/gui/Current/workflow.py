@@ -12,7 +12,7 @@ class WorkflowMixin:
   if self.db_mode not in ['local','external']:raise ValueError('GUI_DB_MODE must be local or external')
  def init_workflow(self):
   self.events=Signals();self.events.incoming.connect(self.receive_event);self.bridge=None;self.reset_status()
-  self.confirming_alert_id=None;self.acknowledged_alert_id=None;self.resolving_alert_id=None
+  self.confirming_alert_id=None;self.acknowledged_alert_id=None;self.resolving_alert_id=None;self.fall_suppressed=False
   self.events.confirmation_result.connect(self.confirmation_result)
   self.events.resolution_result.connect(self.resolution_result)
   d=self.windows['door_access'];d.identityName.setText('Waiting');d.identityId.setText('ID  —')
@@ -75,7 +75,7 @@ class WorkflowMixin:
   if result.get('alert_id')!=getattr(self,'active_alert_id',None):return
   self.resolving_alert_id=None
   if result.get('success'):
-   self.active_alert_id=None;self.acknowledged_alert_id=None;self.set_fall_detected(False);self.record('Fall resolved',details='Central server resolved incident',payload={'event_id':'fall-resolve-'+result['alert_id']})
+   self.active_alert_id=None;self.acknowledged_alert_id=None;self.fall_suppressed=True;self.set_fall_detected(False);self.record('Fall resolved',details='Central server resolved incident',payload={'event_id':'fall-resolve-'+result['alert_id']})
   else:
    c.confirmButton.setText('상황 종료');c.confirmButton.setEnabled(True);self.record('Fall resolve failed',details=result.get('message','Central server rejected resolution'))
  def request_snapshot(self):
@@ -133,7 +133,7 @@ class WorkflowMixin:
  def record(self,event,name='Unknown',person_id=None,details='',payload=None):
   e=payload or {};self.store.event(event,name,person_id,details,e.get('event_id'),e.get('timestamp'));self.setup_logs()
  def setup_logs(self):
-  w=self.windows['logs'];rows=self.store.events();self.logs=[];w.logsTable.setRowCount(len(rows))
+  w=self.windows['logs'];rows=self.store.events();self.log_snapshot=tuple((r['id'],r['time']) for r in rows);self.logs=[];w.logsTable.setRowCount(len(rows))
   for i,r in enumerate(rows):
    try:time=datetime.fromisoformat(r['time']).astimezone(ZoneInfo('Asia/Seoul')).strftime('%Y-%m-%d %H:%M:%S')
    except ValueError:time=r['time']
@@ -143,6 +143,12 @@ class WorkflowMixin:
   if not getattr(self,'logs_connected',False):
    w.search.textChanged.connect(self.filter_logs);w.dateFilter.textChanged.connect(self.filter_logs);w.eventFilter.currentTextChanged.connect(self.filter_logs);w.resetButton.clicked.connect(self.reset_logs);self.logs_connected=True
   self.filter_logs()
+ def refresh_logs_if_changed(self):
+  """Reflect rows committed by another GUI process without disturbing filters."""
+  try:rows=self.store.events()
+  except Exception:return  # The application may be closing while SQLite is gone.
+  snapshot=tuple((r['id'],r['time']) for r in rows)
+  if snapshot!=getattr(self,'log_snapshot',()):self.setup_logs()
  def filter_logs(self,*args):
   w=self.windows['logs']
   for i,row in enumerate(self.logs):w.logsTable.setRowHidden(i,not(w.search.text().lower() in row[2].lower() and (w.eventFilter.currentIndex()==0 or w.eventFilter.currentText()==row[1]) and w.dateFilter.text() in row[0]))
@@ -195,7 +201,7 @@ class WorkflowMixin:
    elif typ=='door':self.update_door(e['state'],True,e)
    elif typ=='fall':
     if e['detected'] and e.get('alert_id'):
-     if e['alert_id']!=getattr(self,'active_alert_id',None):self.confirming_alert_id=None;self.acknowledged_alert_id=None;self.resolving_alert_id=None
+     if e['alert_id']!=getattr(self,'active_alert_id',None):self.confirming_alert_id=None;self.acknowledged_alert_id=None;self.resolving_alert_id=None;self.fall_suppressed=False
      self.active_alert_id=e['alert_id']
     if not e['detected'] and e.get('alert_id')==getattr(self,'active_alert_id',None):self.active_alert_id=None;self.confirming_alert_id=None;self.acknowledged_alert_id=None;self.resolving_alert_id=None
     self.set_fall_detected(e['detected'])

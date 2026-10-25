@@ -48,6 +48,9 @@ class App(WorkflowMixin):
   p.search.textChanged.connect(self.refresh);p.dateFilter.textChanged.connect(self.refresh);p.roleFilter.currentTextChanged.connect(self.refresh);p.bloodFilter.currentTextChanged.connect(self.refresh);p.resetButton.clicked.connect(self.reset_people);p.peopleTable.itemSelectionChanged.connect(self.profile)
   self.windows['register'].saveButton.clicked.connect(self.save)
   self.configure_tables();self.refresh();self.setup_logs()
+  # A second demo process can write to the same SQLite file.  Polling only
+  # refreshes the Logs view when the stored rows actually changed.
+  self.logs_refresh_timer=C.QTimer(self.app);self.logs_refresh_timer.setInterval(int(os.getenv('TSAFE_LOG_REFRESH_MS','500')));self.logs_refresh_timer.timeout.connect(self.refresh_logs_if_changed);self.logs_refresh_timer.start()
   for box in self.windows['register'].findChildren(W.QTextEdit):box.document().setDocumentMargin(0)
   c=self.windows['cctv']
   if hasattr(c,'confirmButton'):c.confirmButton.clicked.connect(lambda:c.confirmButton.setText('Confirmed'))
@@ -75,6 +78,12 @@ class App(WorkflowMixin):
   self.live_frame.start()
  def receive_live_frame(self,pixmap,metadata):
   annotations,result=annotations_from_metadata(metadata)
+  if getattr(self,'fall_suppressed',False):
+   # "상황 종료" applies a GUI-only override to the resolved incident.
+   # The AI keeps publishing its diagnosis, but it is no longer presented as
+   # an active fall until the central service creates a new alert.
+   annotations=[dict(item,state='normal') for item in annotations]
+   result=dict(result,state='normal')
   self.set_cctv_frame(pixmap,annotations)
   # A durable central alert stays visible even if later video frames no
   # longer classify the person as fallen; only its RESOLVED event clears it.

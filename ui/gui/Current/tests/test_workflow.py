@@ -68,6 +68,9 @@ class WorkflowTest(unittest.TestCase):
     time.sleep(.01)
    self.assertEqual([row[0] for row in seen],['/api/v1/alerts/central-alert/acknowledge','/api/v1/alerts/central-alert/resolve'])
    self.assertFalse(self.a.windows['cctv'].fallAlert.isVisible())
+   self.assertTrue(self.a.fall_suppressed)
+   self.a.receive_event({'type':'fall','detected':True,'alert_id':'new-alert'})
+   self.assertFalse(self.a.fall_suppressed)
   finally:
    srv.shutdown();srv.server_close()
    if old_url is None:os.environ.pop('TSAFE_PC1_URL',None)
